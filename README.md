@@ -32,3 +32,10 @@
 - 本体設計: [aimani-v31](https://github.com/MAA39/aimani-v31)（private）
 - 実験プロトコル: Linear slug `8eebc54bf6bb`
 - V1→V2判断: Linear ADR slug（後述）
+
+## ADR（Linear正本）
+
+| # | タイトル | slug |
+|---|---|---|
+| V2-001 | V1を捨ててV2で作り直す | `1ab78f0eff7f` |
+| V2-002 | 知識配置原則の採用 | `1f6578fe4e20` |
