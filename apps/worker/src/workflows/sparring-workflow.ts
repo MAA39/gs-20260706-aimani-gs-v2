@@ -23,7 +23,10 @@ export async function run({ payload, env, init }: FlueContext<unknown, Env>) {
 
   try {
     const admitResult = await aiRunRepo.markAdmitted(input.aiRunId);
-    if (!admitResult.ok) return;
+    if (!admitResult.ok) {
+      await aiRunRepo.fail(input.aiRunId, `CAS conflict on admit: ${admitResult.error._tag}`);
+      return;
+    }
 
     const messagesResult = await chatRepo.listMessages(input.chatId);
     if (!messagesResult.ok) {

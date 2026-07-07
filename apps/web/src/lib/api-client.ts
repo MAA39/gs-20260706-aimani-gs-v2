@@ -63,8 +63,10 @@ export async function sendMessage(chatId: string, memberId: string, message: str
   return res.json();
 }
 
-export async function fetchMessages(chatId: string): Promise<MessagesResponse> {
-  const res = await fetch(`${API_BASE}/chats/${chatId}/messages`);
+export async function fetchMessages(chatId: string, memberId: string): Promise<MessagesResponse> {
+  const res = await fetch(`${API_BASE}/chats/${chatId}/messages`, {
+    headers: { 'x-user-id': memberId },
+  });
   if (!res.ok) throw new Error(`fetchMessages failed: ${res.status}`);
   return res.json();
 }

@@ -40,10 +40,12 @@ function ChatPage() {
   const queryClient = useQueryClient();
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  const [lastHumanSeq, setLastHumanSeq] = useState<number>(0);
+
   const messagesQuery = useQuery({
     queryKey: ['messages', chatId],
-    queryFn: () => fetchMessages(chatId!),
-    enabled: !!chatId,
+    queryFn: () => fetchMessages(chatId!, member.memberId!),
+    enabled: !!chatId && !!member.memberId,
     refetchInterval: waitingForAi ? 2_000 : false,
   });
 
@@ -51,16 +53,23 @@ function ChatPage() {
 
   useEffect(() => {
     if (!waitingForAi) return;
-    const hasAiReply = messages.some((m) => m.senderType === 'ai');
-    const lastMsg = messages[messages.length - 1];
-    if (hasAiReply && lastMsg?.senderType === 'ai') {
+    const hasAiAfterLastHuman = messages.some(
+      (m) => m.senderType === 'ai' && m.sequence > lastHumanSeq,
+    );
+    if (hasAiAfterLastHuman) {
       setWaitingForAi(false);
     }
-  }, [messages, waitingForAi]);
+  }, [messages, waitingForAi, lastHumanSeq]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
+
+  useEffect(() => {
+    if (!waitingForAi) return;
+    const timeout = setTimeout(() => setWaitingForAi(false), 60_000);
+    return () => clearTimeout(timeout);
+  }, [waitingForAi]);
 
   const startMutation = useMutation({
     mutationFn: async (message: string) => {
@@ -69,6 +78,7 @@ function ChatPage() {
     },
     onSuccess: (data) => {
       setChatId(data.chatId);
+      setLastHumanSeq(1);
       setWaitingForAi(true);
     },
   });
@@ -79,6 +89,8 @@ function ChatPage() {
       return sendMessage(chatId!, mid, message);
     },
     onSuccess: () => {
+      const currentMax = messages.length > 0 ? Math.max(...messages.map((m) => m.sequence)) : 0;
+      setLastHumanSeq(currentMax + 1);
       setWaitingForAi(true);
       queryClient.invalidateQueries({ queryKey: ['messages', chatId] });
     },
@@ -131,6 +143,12 @@ function ChatPage() {
         {waitingForAi && (
           <div style={{ ...styles.bubble, ...styles.aiBubble }}>
             <span style={styles.typing}>考え中...</span>
+          </div>
+        )}
+
+        {(startMutation.error || sendMutation.error) && (
+          <div style={styles.errorBanner}>
+            送信に失敗しました。もう一度お試しください。
           </div>
         )}
 
@@ -253,6 +271,14 @@ const styles: Record<string, React.CSSProperties> = {
   typing: {
     opacity: 0.6,
     fontStyle: 'italic',
+  },
+  errorBanner: {
+    padding: '8px 14px',
+    borderRadius: 8,
+    background: '#fee',
+    color: '#c00',
+    fontSize: 13,
+    textAlign: 'center' as const,
   },
   inputArea: {
     display: 'flex',

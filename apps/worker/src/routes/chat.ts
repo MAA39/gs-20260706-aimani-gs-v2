@@ -85,6 +85,15 @@ chatRoutes.post('/:chatId/messages', async (c) => {
   }
 
   const deps = buildDeps(c.env.DB);
+
+  const chatResult = await deps.chatRepo.findById(chatId);
+  if (!chatResult.ok) {
+    return c.json({ code: 'CHAT_NOT_FOUND', message: `Chat ${chatId} not found` }, 404);
+  }
+  if (chatResult.value.memberId !== memberId) {
+    return c.json({ code: 'FORBIDDEN', message: 'Not your chat' }, 403);
+  }
+
   const result = await sendMessage(deps, chatId, body.message);
 
   if (!result.ok) {
@@ -111,12 +120,20 @@ chatRoutes.post('/:chatId/messages', async (c) => {
 });
 
 chatRoutes.get('/:chatId/messages', async (c) => {
+  const memberId = c.req.header('x-user-id') as MemberId | undefined;
+  if (!memberId) {
+    return c.json({ code: 'INVALID_REQUEST', message: 'x-user-id header required' }, 400);
+  }
+
   const chatId = c.req.param('chatId') as ChatId;
   const deps = buildDeps(c.env.DB);
 
   const chatResult = await deps.chatRepo.findById(chatId);
   if (!chatResult.ok) {
     return c.json({ code: 'CHAT_NOT_FOUND', message: `Chat ${chatId} not found` }, 404);
+  }
+  if (chatResult.value.memberId !== memberId) {
+    return c.json({ code: 'FORBIDDEN', message: 'Not your chat' }, 403);
   }
 
   const messagesResult = await deps.chatRepo.listMessages(chatId);
