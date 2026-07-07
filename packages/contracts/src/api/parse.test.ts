@@ -69,4 +69,19 @@ describe('parseCreateMemberRequest', () => {
   it('bioが文字列以外なら拒否する', () => {
     expect(parseCreateMemberRequest({ displayName: '田中', bio: 123 }).ok).toBe(false);
   });
+
+  it('bioが2000文字を超えたら拒否する', () => {
+    expect(parseCreateMemberRequest({ displayName: '田中', bio: 'x'.repeat(2001) }).ok).toBe(false);
+  });
+
+  it('skillsが50件を超えたら拒否する', () => {
+    const tooMany = Array.from({ length: 51 }, (_, i) => `skill-${i}`);
+    expect(parseCreateMemberRequest({ displayName: '田中', skills: tooMany }).ok).toBe(false);
+  });
+
+  it('URL欄はhttps://以外を拒否する', () => {
+    expect(parseCreateMemberRequest({ displayName: '田中', githubUrl: 'javascript:alert(1)' }).ok).toBe(false);
+    expect(parseCreateMemberRequest({ displayName: '田中', githubUrl: 'http://example.com' }).ok).toBe(false);
+    expect(parseCreateMemberRequest({ displayName: '田中', githubUrl: 'https://github.com/maa' }).ok).toBe(true);
+  });
 });

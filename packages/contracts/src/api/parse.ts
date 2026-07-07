@@ -3,6 +3,10 @@ import type { CreateMemberRequest } from './member.js';
 
 export const MAX_MESSAGE_LENGTH = 4000;
 export const MAX_DISPLAY_NAME_LENGTH = 100;
+export const MAX_BIO_LENGTH = 2000;
+export const MAX_URL_LENGTH = 500;
+export const MAX_SKILL_ITEMS = 50;
+export const MAX_SKILL_ITEM_LENGTH = 100;
 
 export interface RequestParseError {
   readonly _tag: 'RequestParseError';
@@ -49,11 +53,25 @@ export function parseSendMessageRequest(input: unknown): ParseResult<SendMessage
 function parseOptionalString(
   input: Record<string, unknown>,
   field: string,
+  maxLength: number,
 ): ParseResult<string | undefined> {
   const value = input[field];
   if (value === undefined || value === null) return { ok: true, value: undefined };
   if (typeof value !== 'string') return parseFailure(field, 'must be a string');
+  if (value.length > maxLength) return parseFailure(field, `must be at most ${maxLength} chars`);
   return { ok: true, value };
+}
+
+function parseOptionalHttpsUrl(
+  input: Record<string, unknown>,
+  field: string,
+): ParseResult<string | undefined> {
+  const parsed = parseOptionalString(input, field, MAX_URL_LENGTH);
+  if (!parsed.ok || parsed.value === undefined) return parsed;
+  if (!/^https:\/\/[^\s]+$/.test(parsed.value)) {
+    return parseFailure(field, 'must be an https:// URL');
+  }
+  return parsed;
 }
 
 function parseOptionalStringArray(
@@ -64,6 +82,12 @@ function parseOptionalStringArray(
   if (value === undefined || value === null) return { ok: true, value: undefined };
   if (!Array.isArray(value) || value.some((v) => typeof v !== 'string')) {
     return parseFailure(field, 'must be an array of strings');
+  }
+  if (value.length > MAX_SKILL_ITEMS) {
+    return parseFailure(field, `must have at most ${MAX_SKILL_ITEMS} items`);
+  }
+  if (value.some((v) => v.length > MAX_SKILL_ITEM_LENGTH)) {
+    return parseFailure(field, `items must be at most ${MAX_SKILL_ITEM_LENGTH} chars`);
   }
   return { ok: true, value };
 }
@@ -79,13 +103,13 @@ export function parseCreateMemberRequest(input: unknown): ParseResult<CreateMemb
     return parseFailure('displayName', `must be at most ${MAX_DISPLAY_NAME_LENGTH} chars`);
   }
 
-  const bio = parseOptionalString(input, 'bio');
+  const bio = parseOptionalString(input, 'bio', MAX_BIO_LENGTH);
   if (!bio.ok) return bio;
-  const githubUrl = parseOptionalString(input, 'githubUrl');
+  const githubUrl = parseOptionalHttpsUrl(input, 'githubUrl');
   if (!githubUrl.ok) return githubUrl;
-  const xUrl = parseOptionalString(input, 'xUrl');
+  const xUrl = parseOptionalHttpsUrl(input, 'xUrl');
   if (!xUrl.ok) return xUrl;
-  const facebookUrl = parseOptionalString(input, 'facebookUrl');
+  const facebookUrl = parseOptionalHttpsUrl(input, 'facebookUrl');
   if (!facebookUrl.ok) return facebookUrl;
 
   const skills = parseOptionalStringArray(input, 'skills');
