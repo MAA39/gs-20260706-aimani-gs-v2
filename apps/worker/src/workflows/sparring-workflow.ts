@@ -21,29 +21,30 @@ export async function run({ payload, env, init }: FlueContext<unknown, Env>) {
   const chatRepo = new D1ChatRepository(env.DB);
   const aiRunRepo = new D1AiRunRepository(env.DB);
 
-  const admitResult = await aiRunRepo.markAdmitted(input.aiRunId);
-  if (!admitResult.ok) return;
-
-  const messagesResult = await chatRepo.listMessages(input.chatId);
-  if (!messagesResult.ok) {
-    await aiRunRepo.fail(input.aiRunId, messagesResult.error._tag);
-    return;
-  }
-
-  const conversationHistory = messagesResult.value
-    .map((m) => `[${m.senderType}]: ${m.body}`)
-    .join('\n');
-
-  const harness = await init(sparringAgent);
-  const session = await harness.session();
-
-  const generateResult = await aiRunRepo.markGenerating(input.aiRunId, session.name ?? crypto.randomUUID());
-  if (!generateResult.ok) {
-    await aiRunRepo.fail(input.aiRunId, 'CAS conflict on generating transition');
-    return;
-  }
-
   try {
+    const admitResult = await aiRunRepo.markAdmitted(input.aiRunId);
+    if (!admitResult.ok) return;
+
+    const messagesResult = await chatRepo.listMessages(input.chatId);
+    if (!messagesResult.ok) {
+      await aiRunRepo.fail(input.aiRunId, messagesResult.error._tag);
+      return;
+    }
+
+    const conversationHistory = messagesResult.value
+      .map((m) => `[${m.senderType}]: ${m.body}`)
+      .join('\n');
+
+    const harness = await init(sparringAgent);
+    const session = await harness.session();
+
+    const flueRunId = `${input.aiRunId}-${crypto.randomUUID().slice(0, 8)}`;
+    const generateResult = await aiRunRepo.markGenerating(input.aiRunId, flueRunId);
+    if (!generateResult.ok) {
+      await aiRunRepo.fail(input.aiRunId, 'CAS conflict on generating transition');
+      return;
+    }
+
     const response = await session.prompt(
       `以下の会話履歴に基づいて、壁打ち相手として応答してください。\n\n${conversationHistory}`,
     );
@@ -80,6 +81,7 @@ export async function run({ payload, env, init }: FlueContext<unknown, Env>) {
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Unknown workflow error';
-    await aiRunRepo.fail(input.aiRunId, message.slice(0, 500));
+    console.error('sparring-workflow failed', { aiRunId: input.aiRunId, error: message });
+    await aiRunRepo.fail(input.aiRunId, message.slice(0, 500)).catch(() => {});
   }
 }

@@ -17,7 +17,13 @@ function triggerWorkflow(appFetch: AppVars['appFetch'], env: Env, executionCtx: 
     body: JSON.stringify(payload),
   });
   executionCtx.waitUntil(
-    Promise.resolve(appFetch(req, env, executionCtx as ExecutionContext)).catch(() => {}),
+    Promise.resolve(appFetch(req, env, executionCtx as ExecutionContext))
+      .then((res) => {
+        if (!res.ok) console.error('triggerWorkflow failed', { status: res.status, aiRunId: payload.aiRunId });
+      })
+      .catch((e) => {
+        console.error('triggerWorkflow error', { message: e instanceof Error ? e.message : String(e), aiRunId: payload.aiRunId });
+      }),
   );
 }
 
