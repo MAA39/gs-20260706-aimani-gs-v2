@@ -6,7 +6,7 @@
 
 1. **main直コミット禁止**。feature/NN-名前 → PR → レビュー → マージ
 2. **テスト名は仕様書**。`it("退職済みメンバーの面談開始は403を返す")` の粒度で書く
-3. **throwしない**。Effect.fail + catchTags網羅。throw new Errorを見たらバグ
+3. **throwしない**。`{ ok: true; value } | { ok: false; error }` のResult型 + `_tag` union + `switch`/`satisfies never`で網羅。throw new Errorを見たらバグ
 4. **型で守れるものはテストで守らない**。Brand型 > バリデーション > テスト
 5. **ADRはLinearの正本**。コード内コメントにWhyを書かない（ADR slugを参照）
 6. **命名は意図が伝わるものに**。data→payload, result→response, run→execute_xxx
@@ -23,7 +23,7 @@
 
 ## 技術制約
 
-- Effect-TSのLayerはpackages/domain内のみ。apps/apiでは使わない
+- packages/domain はI/O禁止（純粋TS）。外界依存は全てPort interfaceで受け、呼び出し側が引数注入（`deps: { repo, clock, idGen }`）で渡す（ADR-V2-006）
 - Flue Agentの設定はapps/agent/に閉じる
 - D1マイグレーションはpackages/db/migrations/に置く
 - wrangler.jsoncのmigrations_dirは必ず設定する（V1での学び）

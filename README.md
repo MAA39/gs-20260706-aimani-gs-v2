@@ -5,7 +5,7 @@
 ## V1（gs-20260630-aimani-gs）からの変更点
 
 - **設計優先**: ADR/SPECを先に書き、チケット駆動で1枚ずつ実装
-- **技術基盤**: Effect-TS（throw撲滅・Layer DI）/ Flue Agent / CQRS
+- **技術基盤**: Port & Adapter + Result型（throw撲滅・DIは引数注入で予約）/ Flue Agent / CQRS-lite
 - **知識配置**: How→コード、What→テスト、Why/Why not→ADR（Linear）
 - **蠱毒ループ**: Job Contract → Claude/Codex協業 → レビュー → DoD
 
@@ -13,7 +13,7 @@
 
 - TypeScript / Hono / Cloudflare Workers / D1
 - TanStack Start（SSR）
-- Effect-TS（packages/domain）
+- Port & Adapter + Result型（packages/domain、I/O禁止・Effect-TSは見送り＝ADR-V2-006）
 - Flue（Agent Worker）
 - Turborepo
 
@@ -39,3 +39,5 @@
 |---|---|---|
 | V2-001 | V1を捨ててV2で作り直す | `1ab78f0eff7f` |
 | V2-002 | 知識配置原則の採用 | `1f6578fe4e20` |
+| V2-003 | Product Boundary（AI壁打ち起点の人の発見と接続） | `3e045a22b67b` |
+| V2-006 | Effect-TS見送り（Port & Adapter + Result型） | `a51a0c811b47` |
