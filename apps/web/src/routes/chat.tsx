@@ -6,7 +6,9 @@ import {
   sendMessage,
   fetchMessages,
   fetchChats,
+  fetchAiRunStatus,
   type ApiClientError,
+  type AiRunStatus,
   type ChatMessage,
   type ChatSummary,
 } from '../lib/api-client';
@@ -67,6 +69,7 @@ function ChatPage() {
   const [chatId, setChatId] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [waitingForAi, setWaitingForAi] = useState(false);
+  const [activeAiRunId, setActiveAiRunId] = useState<string | null>(null);
   const [uiError, setUiError] = useState<UiError | null>(null);
   const queryClient = useQueryClient();
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -86,6 +89,22 @@ function ChatPage() {
     enabled: !chatId && !!session?.user,
   });
   const pastChats: ChatSummary[] = chatsQuery.data?.ok ? chatsQuery.data.value.chats : [];
+
+  const aiRunQuery = useQuery({
+    queryKey: ['ai-run', activeAiRunId],
+    queryFn: () => fetchAiRunStatus(activeAiRunId!),
+    enabled: !!activeAiRunId && waitingForAi,
+    refetchInterval: 2_000,
+  });
+  const aiRunStatus: AiRunStatus | null = aiRunQuery.data?.ok ? aiRunQuery.data.value.status : null;
+
+  // run終端をUIへ反映（failedは即エラー表示、completedはmessages側の到着で解除される）
+  useEffect(() => {
+    if (aiRunStatus === 'failed') {
+      setWaitingForAi(false);
+      setUiError({ kind: 'generic', text: 'AI応答の生成に失敗しました。もう一度送信してください。' });
+    }
+  }, [aiRunStatus]);
 
   const messagesResult = messagesQuery.data;
   const messages = messagesResult?.ok ? messagesResult.value.messages : [];
@@ -142,6 +161,7 @@ function ChatPage() {
       setUiError(null);
       setChatId(result.value.chatId);
       setLastHumanSeq(1);
+      setActiveAiRunId(result.value.aiRunId);
       setWaitingForAi(true);
     },
   });
@@ -156,6 +176,7 @@ function ChatPage() {
       setUiError(null);
       const currentMax = messages.length > 0 ? Math.max(...messages.map((m) => m.sequence)) : 0;
       setLastHumanSeq(currentMax + 1);
+      setActiveAiRunId(result.value.aiRunId);
       setWaitingForAi(true);
       queryClient.invalidateQueries({ queryKey: ['messages', chatId] });
     },
@@ -275,7 +296,7 @@ function ChatPage() {
 
         {waitingForAi && (
           <div style={{ ...styles.bubble, ...styles.aiBubble }}>
-            <span style={styles.typing}>考え中...</span>
+            <span style={styles.typing}>{describeAiRunStatus(aiRunStatus)}</span>
           </div>
         )}
 
@@ -309,6 +330,26 @@ function ChatPage() {
       </form>
     </div>
   );
+}
+
+// 進捗文言はv1で検証済みのコピーを採用（docs/review/2026-07-08-v1-frontend-adoption.md）
+function describeAiRunStatus(status: AiRunStatus | null): string {
+  switch (status) {
+    case null:
+    case 'queued':
+    case 'admitted':
+      return '接続中...';
+    case 'generating':
+      return 'AIが相談の材料を整理しています...';
+    case 'repairing':
+      return '形式を整えています...';
+    case 'completed':
+      return '応答を受け取っています...';
+    case 'failed':
+      return 'エラーが発生しました';
+    default:
+      return status satisfies never;
+  }
 }
 
 function MessageBubble({ message }: { message: ChatMessage }) {

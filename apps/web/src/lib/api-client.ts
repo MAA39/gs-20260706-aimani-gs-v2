@@ -37,6 +37,14 @@ interface ChatListResponse {
   chats: ChatSummary[];
 }
 
+type AiRunStatus = 'queued' | 'admitted' | 'generating' | 'repairing' | 'completed' | 'failed';
+
+interface AiRunStatusResponse {
+  aiRunId: string;
+  status: AiRunStatus;
+  errorMessage: string | null;
+}
+
 export type ApiClientError =
   | { _tag: 'HttpError'; status: number; code: string; message: string }
   | { _tag: 'NetworkError'; message: string }
@@ -46,7 +54,7 @@ export type ApiResult<T> =
   | { ok: true; value: T }
   | { ok: false; error: ApiClientError };
 
-export type { ChatMessage, StartChatResponse, SendMessageResponse, MessagesResponse, ChatSummary, ChatListResponse };
+export type { ChatMessage, StartChatResponse, SendMessageResponse, MessagesResponse, ChatSummary, ChatListResponse, AiRunStatus, AiRunStatusResponse };
 
 async function readErrorBody(res: Response): Promise<{ code: string; message: string }> {
   try {
@@ -109,4 +117,8 @@ export function fetchMessages(chatId: string): Promise<ApiResult<MessagesRespons
 
 export function fetchChats(): Promise<ApiResult<ChatListResponse>> {
   return requestJson<ChatListResponse>('/chats');
+}
+
+export function fetchAiRunStatus(aiRunId: string): Promise<ApiResult<AiRunStatusResponse>> {
+  return requestJson<AiRunStatusResponse>(`/ai-runs/${aiRunId}`);
 }

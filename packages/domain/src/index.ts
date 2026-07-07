@@ -20,3 +20,6 @@ export type { ListChatMessagesDeps, ListChatMessagesError } from './use-cases/li
 
 export { listMemberChats } from './use-cases/list-member-chats.js';
 export type { ListMemberChatsDeps } from './use-cases/list-member-chats.js';
+
+export { getAiRunStatus } from './use-cases/get-ai-run-status.js';
+export type { GetAiRunStatusDeps, GetAiRunStatusError } from './use-cases/get-ai-run-status.js';

@@ -3,6 +3,7 @@ import type { Context } from 'hono';
 import { flue } from '@flue/runtime/routing';
 import { chatRoutes } from './routes/chat.js';
 import { memberRoutes } from './routes/member.js';
+import { aiRunRoutes } from './routes/ai-run.js';
 import { createAuth, resolveAuthBaseURL } from './auth.js';
 import { jsonBodyLimit, BODY_LIMITS } from './middleware/body-limit.js';
 
@@ -46,6 +47,7 @@ app.use('/api/members/*', jsonBodyLimit(BODY_LIMITS.api));
 app.use('/api/members', jsonBodyLimit(BODY_LIMITS.api));
 app.route('/api/chats', chatRoutes);
 app.route('/api/members', memberRoutes);
+app.route('/api/ai-runs', aiRunRoutes);
 
 const authHandler = async (c: Context<{ Bindings: Env; Variables: AppVars }>) => {
   if (!c.env?.BETTER_AUTH_SECRET?.trim()) {

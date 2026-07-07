@@ -42,3 +42,9 @@ export interface ChatSummaryDto {
 export interface ChatListResponse {
   readonly chats: readonly ChatSummaryDto[];
 }
+
+export interface AiRunStatusResponse {
+  readonly aiRunId: string;
+  readonly status: 'queued' | 'admitted' | 'generating' | 'repairing' | 'completed' | 'failed';
+  readonly errorMessage: string | null;
+}

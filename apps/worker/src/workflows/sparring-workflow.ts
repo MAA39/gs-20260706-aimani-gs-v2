@@ -86,7 +86,10 @@ export async function run({ payload, env, init }: FlueContext<unknown, Env>) {
       await failVisibly('trigger message not found in chat history');
       return;
     }
-    const historySnapshot = messagesResult.value.filter((m) => m.sequence <= triggerMessage.sequence);
+    // system=失敗通知はユーザー向け表示専用。AIの会話履歴に混ぜない
+    const historySnapshot = messagesResult.value.filter(
+      (m) => m.sequence <= triggerMessage.sequence && m.senderType !== 'system',
+    );
 
     const conversationHistory = JSON.stringify(
       historySnapshot.map((m) => ({ role: m.senderType, content: m.body })),
