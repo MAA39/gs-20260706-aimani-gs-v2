@@ -5,6 +5,7 @@ import {
   startChat,
   sendMessage,
   fetchMessages,
+  type ApiClientError,
   type ChatMessage,
 } from '../lib/api-client';
 import { authClient } from '../lib/auth-client';
@@ -12,6 +13,33 @@ import { authClient } from '../lib/auth-client';
 export const Route = createFileRoute('/chat')({
   component: ChatPage,
 });
+
+interface UiError {
+  readonly kind: 'auth' | 'rate_limited' | 'conflict' | 'network' | 'timeout' | 'generic';
+  readonly text: string;
+}
+
+function describeApiError(error: ApiClientError): UiError {
+  switch (error._tag) {
+    case 'HttpError':
+      if (error.status === 401) {
+        return { kind: 'auth', text: 'ログインの有効期限が切れました。もう一度ログインしてください。' };
+      }
+      if (error.status === 429) {
+        return { kind: 'rate_limited', text: '送信が続きすぎています。少し待ってからもう一度お試しください。' };
+      }
+      if (error.status === 409) {
+        return { kind: 'conflict', text: '送信が重なりました。もう一度お試しください。' };
+      }
+      return { kind: 'generic', text: '送信に失敗しました。もう一度お試しください。' };
+    case 'NetworkError':
+      return { kind: 'network', text: 'ネットワークに接続できません。通信環境を確認して再送してください。' };
+    case 'InvalidResponseBody':
+      return { kind: 'generic', text: 'サーバー応答を読み取れませんでした。もう一度お試しください。' };
+    default:
+      return error satisfies never;
+  }
+}
 
 function ChatPage() {
   const { data: session, isPending: sessionLoading } = authClient.useSession();
@@ -26,6 +54,7 @@ function ChatPage() {
   const [chatId, setChatId] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [waitingForAi, setWaitingForAi] = useState(false);
+  const [uiError, setUiError] = useState<UiError | null>(null);
   const queryClient = useQueryClient();
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -38,7 +67,15 @@ function ChatPage() {
     refetchInterval: waitingForAi ? 2_000 : false,
   });
 
-  const messages = messagesQuery.data?.messages ?? [];
+  const messagesResult = messagesQuery.data;
+  const messages = messagesResult?.ok ? messagesResult.value.messages : [];
+
+  useEffect(() => {
+    if (!messagesResult || messagesResult.ok) return;
+    if (messagesResult.error._tag === 'HttpError' && messagesResult.error.status === 401) {
+      navigate({ to: '/' });
+    }
+  }, [messagesResult, navigate]);
 
   useEffect(() => {
     if (!waitingForAi) return;
@@ -56,14 +93,33 @@ function ChatPage() {
 
   useEffect(() => {
     if (!waitingForAi) return;
-    const timeout = setTimeout(() => setWaitingForAi(false), 60_000);
+    const timeout = setTimeout(() => {
+      setWaitingForAi(false);
+      setUiError({ kind: 'timeout', text: 'AIの応答が届きませんでした。もう一度送信してみてください。' });
+    }, 60_000);
     return () => clearTimeout(timeout);
   }, [waitingForAi]);
 
+  const handleSendFailure = (error: ApiClientError, failedMessage: string) => {
+    const described = describeApiError(error);
+    setUiError(described);
+    if (described.kind === 'auth') {
+      navigate({ to: '/' });
+      return;
+    }
+    // 失敗した本文を入力欄へ戻して再送しやすくする（既に入力中なら上書きしない）
+    setInput((current) => current || failedMessage);
+  };
+
   const startMutation = useMutation({
     mutationFn: (message: string) => startChat(message),
-    onSuccess: (data) => {
-      setChatId(data.chatId);
+    onSuccess: (result, message) => {
+      if (!result.ok) {
+        handleSendFailure(result.error, message);
+        return;
+      }
+      setUiError(null);
+      setChatId(result.value.chatId);
       setLastHumanSeq(1);
       setWaitingForAi(true);
     },
@@ -71,7 +127,12 @@ function ChatPage() {
 
   const sendMutation = useMutation({
     mutationFn: (message: string) => sendMessage(chatId!, message),
-    onSuccess: () => {
+    onSuccess: (result, message) => {
+      if (!result.ok) {
+        handleSendFailure(result.error, message);
+        return;
+      }
+      setUiError(null);
       const currentMax = messages.length > 0 ? Math.max(...messages.map((m) => m.sequence)) : 0;
       setLastHumanSeq(currentMax + 1);
       setWaitingForAi(true);
@@ -84,6 +145,7 @@ function ChatPage() {
     const trimmed = input.trim();
     if (!trimmed) return;
     setInput('');
+    setUiError(null);
 
     if (chatId) {
       sendMutation.mutate(trimmed);
@@ -105,6 +167,7 @@ function ChatPage() {
   if (!session?.user) return null;
 
   const isSending = startMutation.isPending || sendMutation.isPending;
+  const fetchFailed = messagesResult !== undefined && !messagesResult.ok;
 
   return (
     <div style={styles.container}>
@@ -116,6 +179,7 @@ function ChatPage() {
             onClick={() => {
               setChatId(null);
               setWaitingForAi(false);
+              setUiError(null);
             }}
           >
             新しい壁打ち
@@ -131,6 +195,12 @@ function ChatPage() {
           </div>
         )}
 
+        {chatId && messagesQuery.isPending && (
+          <div style={styles.empty}>
+            <p style={styles.emptySubtitle}>会話を読み込んでいます...</p>
+          </div>
+        )}
+
         {messages.map((msg) => (
           <MessageBubble key={msg.id} message={msg} />
         ))}
@@ -141,11 +211,16 @@ function ChatPage() {
           </div>
         )}
 
-        {(startMutation.error || sendMutation.error) && (
+        {fetchFailed && (
           <div style={styles.errorBanner}>
-            送信に失敗しました。もう一度お試しください。
+            会話の取得に失敗しました。
+            <button style={styles.retryButton} onClick={() => messagesQuery.refetch()}>
+              再読み込み
+            </button>
           </div>
         )}
+
+        {uiError && <div style={styles.errorBanner}>{uiError.text}</div>}
 
         <div ref={bottomRef} />
       </main>
@@ -160,7 +235,7 @@ function ChatPage() {
           disabled={isSending}
         />
         <button style={styles.sendButton} type="submit" disabled={isSending || !input.trim()}>
-          送信
+          {isSending ? '送信中...' : '送信'}
         </button>
       </form>
     </div>
@@ -274,6 +349,19 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#c00',
     fontSize: 13,
     textAlign: 'center' as const,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  retryButton: {
+    padding: '4px 10px',
+    fontSize: 12,
+    border: '1px solid #c00',
+    borderRadius: 6,
+    background: 'white',
+    color: '#c00',
+    cursor: 'pointer',
   },
   inputArea: {
     display: 'flex',

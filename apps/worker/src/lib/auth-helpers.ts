@@ -33,11 +33,3 @@ export function authErrorResponse(session: SessionResult) {
   if (session.reason === 'auth_failure') return { body: { error: 'authentication service error' }, status: 500 } as const;
   return { body: { error: 'authentication required' }, status: 401 } as const;
 }
-
-export function assertAuthenticated(session: SessionResult): asserts session is AuthenticatedSession {
-  if (!session.ok) throw new Error('unreachable unauthenticated session');
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}

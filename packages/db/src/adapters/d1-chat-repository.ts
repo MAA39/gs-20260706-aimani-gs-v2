@@ -44,68 +44,94 @@ function rowToMessage(row: MessageRow): Message {
   };
 }
 
+function isUniqueConstraintFailure(cause: unknown): boolean {
+  return cause instanceof Error && cause.message.includes('UNIQUE constraint failed');
+}
+
+const APPEND_MESSAGE_MAX_ATTEMPTS = 3;
+
 export class D1ChatRepository implements ChatRepository {
   constructor(private readonly db: D1Database) {}
 
   async create(id: ChatId, input: CreateChatInput): Promise<Result<Chat, ChatError>> {
     const now = new Date().toISOString();
-    await this.db
-      .prepare('INSERT INTO chats (id, member_id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(id, input.memberId, input.title ?? null, 'active', now, now)
-      .run();
+    try {
+      await this.db
+        .prepare('INSERT INTO chats (id, member_id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(id, input.memberId, input.title ?? null, 'active', now, now)
+        .run();
+    } catch {
+      return err({ _tag: 'ChatDbFailure', operation: 'create' });
+    }
     return this.findById(id);
   }
 
   async findById(id: ChatId): Promise<Result<Chat, ChatError>> {
-    const row = await this.db
-      .prepare('SELECT * FROM chats WHERE id = ?')
-      .bind(id)
-      .first<ChatRow>();
-    if (!row) return err({ _tag: 'ChatNotFound', chatId: id });
-    return ok(rowToChat(row));
+    try {
+      const row = await this.db
+        .prepare('SELECT * FROM chats WHERE id = ?')
+        .bind(id)
+        .first<ChatRow>();
+      if (!row) return err({ _tag: 'ChatNotFound', chatId: id });
+      return ok(rowToChat(row));
+    } catch {
+      return err({ _tag: 'ChatDbFailure', operation: 'findById' });
+    }
   }
 
   async findByMember(memberId: MemberId): Promise<Result<readonly Chat[], ChatError>> {
-    const { results } = await this.db
-      .prepare('SELECT * FROM chats WHERE member_id = ? ORDER BY created_at DESC')
-      .bind(memberId)
-      .all<ChatRow>();
-    return ok(results.map(rowToChat));
+    try {
+      const { results } = await this.db
+        .prepare('SELECT * FROM chats WHERE member_id = ? ORDER BY created_at DESC')
+        .bind(memberId)
+        .all<ChatRow>();
+      return ok(results.map(rowToChat));
+    } catch {
+      return err({ _tag: 'ChatDbFailure', operation: 'findByMember' });
+    }
   }
 
   async appendMessage(id: MessageId, input: AppendMessageInput): Promise<Result<Message, ChatError>> {
-    const seqResult = await this.getNextSequence(input.chatId);
-    if (!seqResult.ok) return seqResult;
-
-    const now = new Date().toISOString();
-    await this.db
-      .prepare('INSERT INTO messages (id, chat_id, sender_type, body, sequence, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(id, input.chatId, input.senderType, input.body, seqResult.value, now)
-      .run();
-
-    return ok({
-      id,
-      chatId: input.chatId,
-      senderType: input.senderType,
-      body: input.body,
-      sequence: seqResult.value,
-      createdAt: now,
-    });
+    for (let attempt = 1; attempt <= APPEND_MESSAGE_MAX_ATTEMPTS; attempt++) {
+      const now = new Date().toISOString();
+      try {
+        const row = await this.db
+          .prepare(
+            `INSERT INTO messages (id, chat_id, sender_type, body, sequence, created_at)
+             SELECT ?1, ?2, ?3, ?4, COALESCE(MAX(sequence), 0) + 1, ?5 FROM messages WHERE chat_id = ?2
+             RETURNING sequence`,
+          )
+          .bind(id, input.chatId, input.senderType, input.body, now)
+          .first<{ sequence: number }>();
+        if (!row) return err({ _tag: 'ChatDbFailure', operation: 'appendMessage' });
+        return ok({
+          id,
+          chatId: input.chatId,
+          senderType: input.senderType,
+          body: input.body,
+          sequence: row.sequence,
+          createdAt: now,
+        });
+      } catch (cause) {
+        if (isUniqueConstraintFailure(cause)) {
+          if (attempt < APPEND_MESSAGE_MAX_ATTEMPTS) continue;
+          return err({ _tag: 'MessageSequenceConflict', chatId: input.chatId });
+        }
+        return err({ _tag: 'ChatDbFailure', operation: 'appendMessage' });
+      }
+    }
+    return err({ _tag: 'MessageSequenceConflict', chatId: input.chatId });
   }
 
   async listMessages(chatId: ChatId): Promise<Result<readonly Message[], ChatError>> {
-    const { results } = await this.db
-      .prepare('SELECT * FROM messages WHERE chat_id = ? ORDER BY sequence ASC')
-      .bind(chatId)
-      .all<MessageRow>();
-    return ok(results.map(rowToMessage));
-  }
-
-  async getNextSequence(chatId: ChatId): Promise<Result<number, ChatError>> {
-    const row = await this.db
-      .prepare('SELECT COALESCE(MAX(sequence), 0) as max_seq FROM messages WHERE chat_id = ?')
-      .bind(chatId)
-      .first<{ max_seq: number }>();
-    return ok((row?.max_seq ?? 0) + 1);
+    try {
+      const { results } = await this.db
+        .prepare('SELECT * FROM messages WHERE chat_id = ? ORDER BY sequence ASC')
+        .bind(chatId)
+        .all<MessageRow>();
+      return ok(results.map(rowToMessage));
+    } catch {
+      return err({ _tag: 'ChatDbFailure', operation: 'listMessages' });
+    }
   }
 }

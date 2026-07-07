@@ -36,24 +36,36 @@ function rowToMember(row: D1Row): Member {
   };
 }
 
+function isUniqueConstraintFailure(cause: unknown): boolean {
+  return cause instanceof Error && cause.message.includes('UNIQUE constraint failed');
+}
+
 export class D1MemberRepository implements MemberRepository {
   constructor(private readonly db: D1Database) {}
 
   async findById(id: MemberId): Promise<Result<Member, MemberError>> {
-    const row = await this.db
-      .prepare('SELECT * FROM members WHERE id = ?')
-      .bind(id)
-      .first<D1Row>();
-    if (!row) return err({ _tag: 'MemberNotFound', memberId: id });
-    return ok(rowToMember(row));
+    try {
+      const row = await this.db
+        .prepare('SELECT * FROM members WHERE id = ?')
+        .bind(id)
+        .first<D1Row>();
+      if (!row) return err({ _tag: 'MemberNotFound', memberId: id });
+      return ok(rowToMember(row));
+    } catch {
+      return err({ _tag: 'MemberDbFailure', operation: 'findById' });
+    }
   }
 
   async findByRole(role: string): Promise<Result<readonly Member[], MemberError>> {
-    const { results } = await this.db
-      .prepare('SELECT * FROM members WHERE role = ? ORDER BY display_name')
-      .bind(role)
-      .all<D1Row>();
-    return ok(results.map(rowToMember));
+    try {
+      const { results } = await this.db
+        .prepare('SELECT * FROM members WHERE role = ? ORDER BY display_name')
+        .bind(role)
+        .all<D1Row>();
+      return ok(results.map(rowToMember));
+    } catch {
+      return err({ _tag: 'MemberDbFailure', operation: 'findByRole' });
+    }
   }
 
   async findBySkills(skills: readonly string[]): Promise<Result<readonly Member[], MemberError>> {
@@ -67,35 +79,46 @@ export class D1MemberRepository implements MemberRepository {
       )
       ORDER BY m.display_name
     `;
-    const { results } = await this.db
-      .prepare(query)
-      .bind(...skills)
-      .all<D1Row>();
-    return ok(results.map(rowToMember));
+    try {
+      const { results } = await this.db
+        .prepare(query)
+        .bind(...skills)
+        .all<D1Row>();
+      return ok(results.map(rowToMember));
+    } catch {
+      return err({ _tag: 'MemberDbFailure', operation: 'findBySkills' });
+    }
   }
 
   async create(id: MemberId, input: CreateMemberInput): Promise<Result<Member, MemberError>> {
     const now = new Date().toISOString();
-    await this.db
-      .prepare(`
-        INSERT INTO members (id, display_name, role, bio, skills_json, can_help_with_json, wants_help_with_json, github_url, x_url, facebook_url, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `)
-      .bind(
-        id,
-        input.displayName,
-        input.role,
-        input.bio ?? '',
-        JSON.stringify(input.skills ?? []),
-        JSON.stringify(input.canHelpWith ?? []),
-        JSON.stringify(input.wantsHelpWith ?? []),
-        input.githubUrl ?? null,
-        input.xUrl ?? null,
-        input.facebookUrl ?? null,
-        now,
-        now,
-      )
-      .run();
+    try {
+      await this.db
+        .prepare(`
+          INSERT INTO members (id, display_name, role, bio, skills_json, can_help_with_json, wants_help_with_json, github_url, x_url, facebook_url, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+        .bind(
+          id,
+          input.displayName,
+          input.role,
+          input.bio ?? '',
+          JSON.stringify(input.skills ?? []),
+          JSON.stringify(input.canHelpWith ?? []),
+          JSON.stringify(input.wantsHelpWith ?? []),
+          input.githubUrl ?? null,
+          input.xUrl ?? null,
+          input.facebookUrl ?? null,
+          now,
+          now,
+        )
+        .run();
+    } catch (cause) {
+      if (isUniqueConstraintFailure(cause)) {
+        return err({ _tag: 'MemberAlreadyExists', memberId: id });
+      }
+      return err({ _tag: 'MemberDbFailure', operation: 'create' });
+    }
 
     return this.findById(id);
   }

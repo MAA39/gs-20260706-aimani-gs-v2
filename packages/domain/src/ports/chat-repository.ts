@@ -14,5 +14,4 @@ export interface ChatRepository {
   findByMember(memberId: MemberId): Promise<Result<readonly Chat[], ChatError>>;
   appendMessage(id: MessageId, input: AppendMessageInput): Promise<Result<Message, ChatError>>;
   listMessages(chatId: ChatId): Promise<Result<readonly Message[], ChatError>>;
-  getNextSequence(chatId: ChatId): Promise<Result<number, ChatError>>;
 }
