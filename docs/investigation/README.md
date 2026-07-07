@@ -15,6 +15,8 @@ amidala-refactoring の `docs/codex/` と同じ運用: **編集禁止、原文�
 | 06 | [06-bs-job-board-gap-analysis.md](06-bs-job-board-gap-analysis.md) | bs-job-board vs V2 差分分析・ブラッシュアップ提案 | Codex (codex-rescue) |
 | 07 | [07-bs-job-board-d1-patterns.md](07-bs-job-board-d1-patterns.md) | bs-job-board D1スキーマ・クエリ・パイプライン調査 | Codex (codex-rescue) |
 | 08 | [08-bs-job-board-architecture-comparison.md](08-bs-job-board-architecture-comparison.md) | bs-job-board アーキテクチャ比較・移植戦略 | Codex (codex-rescue) |
+| 09 | [09-bs-job-board-contracts.md](09-bs-job-board-contracts.md) | bs-job-board packages/contracts 構造調査 | Codex (codex-rescue) |
+| 10 | [10-bs-job-board-ci-architecture-guards.md](10-bs-job-board-ci-architecture-guards.md) | bs-job-board CI/CD + アーキテクチャガード調査 | Codex (codex-rescue) |
 
 ## 運用ルール
 
