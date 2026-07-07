@@ -1,42 +1,31 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useRef, useEffect } from 'react';
 import {
-  createMember,
   startChat,
   sendMessage,
   fetchMessages,
   type ChatMessage,
 } from '../lib/api-client';
+import { authClient } from '../lib/auth-client';
 
 export const Route = createFileRoute('/chat')({
   component: ChatPage,
 });
 
-const MEMBER_KEY = 'aimani-member-id';
-
-function useMemberId() {
-  const [memberId, setMemberId] = useState<string | null>(() => {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem(MEMBER_KEY);
-  });
-
-  const ensure = async () => {
-    if (memberId) return memberId;
-    const member = await createMember(`user-${Date.now()}`);
-    localStorage.setItem(MEMBER_KEY, member.id);
-    setMemberId(member.id);
-    return member.id;
-  };
-
-  return { memberId, ensure };
-}
-
 function ChatPage() {
+  const { data: session, isPending: sessionLoading } = authClient.useSession();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!sessionLoading && !session?.user) {
+      navigate({ to: '/' });
+    }
+  }, [session, sessionLoading, navigate]);
+
   const [chatId, setChatId] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [waitingForAi, setWaitingForAi] = useState(false);
-  const member = useMemberId();
   const queryClient = useQueryClient();
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -44,8 +33,8 @@ function ChatPage() {
 
   const messagesQuery = useQuery({
     queryKey: ['messages', chatId],
-    queryFn: () => fetchMessages(chatId!, member.memberId!),
-    enabled: !!chatId && !!member.memberId,
+    queryFn: () => fetchMessages(chatId!),
+    enabled: !!chatId && !!session?.user,
     refetchInterval: waitingForAi ? 2_000 : false,
   });
 
@@ -72,10 +61,7 @@ function ChatPage() {
   }, [waitingForAi]);
 
   const startMutation = useMutation({
-    mutationFn: async (message: string) => {
-      const mid = await member.ensure();
-      return startChat(mid, message);
-    },
+    mutationFn: (message: string) => startChat(message),
     onSuccess: (data) => {
       setChatId(data.chatId);
       setLastHumanSeq(1);
@@ -84,10 +70,7 @@ function ChatPage() {
   });
 
   const sendMutation = useMutation({
-    mutationFn: async (message: string) => {
-      const mid = await member.ensure();
-      return sendMessage(chatId!, mid, message);
-    },
+    mutationFn: (message: string) => sendMessage(chatId!, message),
     onSuccess: () => {
       const currentMax = messages.length > 0 ? Math.max(...messages.map((m) => m.sequence)) : 0;
       setLastHumanSeq(currentMax + 1);
@@ -108,6 +91,18 @@ function ChatPage() {
       startMutation.mutate(trimmed);
     }
   };
+
+  if (sessionLoading) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.empty}>
+          <p style={styles.emptySubtitle}>読み込み中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session?.user) return null;
 
   const isSending = startMutation.isPending || sendMutation.isPending;
 

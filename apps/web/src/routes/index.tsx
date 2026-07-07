@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
+import { signInWithGitHub } from '../lib/auth-client';
 
 export const Route = createFileRoute('/')({
   component: HomePage,
@@ -12,6 +13,9 @@ function HomePage() {
       <Link to="/chat" style={styles.startButton}>
         壁打ちを始める
       </Link>
+      <button style={styles.loginButton} onClick={() => signInWithGitHub()}>
+        GitHubでログイン
+      </button>
     </main>
   );
 }
@@ -44,5 +48,16 @@ const styles: Record<string, React.CSSProperties> = {
     background: '#007AFF',
     borderRadius: 8,
     textDecoration: 'none',
+  },
+  loginButton: {
+    marginTop: 16,
+    padding: '10px 24px',
+    fontSize: 14,
+    fontWeight: 600,
+    color: '#333',
+    background: 'white',
+    border: '1px solid #ccc',
+    borderRadius: 8,
+    cursor: 'pointer',
   },
 };

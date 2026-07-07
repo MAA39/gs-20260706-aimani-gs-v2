@@ -7,13 +7,28 @@ import { sendMessage } from '@gs-v2/domain';
 import { D1ChatRepository } from '@gs-v2/db';
 import { D1MemberRepository } from '@gs-v2/db';
 import { D1AiRunRepository } from '@gs-v2/db';
+import { getSessionForRequest, authErrorResponse } from '../lib/auth-helpers.js';
+import type { AuthenticatedSession } from '../lib/auth-helpers.js';
 
 export const chatRoutes = new Hono<{ Bindings: Env; Variables: AppVars }>();
+
+async function ensureMemberForSession(memberRepo: D1MemberRepository, session: AuthenticatedSession): Promise<MemberId> {
+  const memberId = session.user.id as MemberId;
+  const existing = await memberRepo.findById(memberId);
+  if (existing.ok) return memberId;
+
+  const created = await memberRepo.create(memberId, {
+    displayName: session.user.name || session.user.email || memberId,
+    role: 'student',
+  });
+  if (!created.ok) throw new Error(`failed to auto-create member for session user ${memberId}`);
+  return memberId;
+}
 
 function triggerWorkflow(appFetch: AppVars['appFetch'], env: Env, executionCtx: { waitUntil: (p: Promise<unknown>) => void; passThroughOnException: () => void }, payload: Record<string, string>) {
   const req = new Request('http://internal/workflows/sparring-workflow', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-internal-token': env.INTERNAL_ROUTE_SECRET },
     body: JSON.stringify(payload),
   });
   executionCtx.waitUntil(
@@ -37,17 +52,28 @@ function buildDeps(db: D1Database) {
 }
 
 chatRoutes.post('/', async (c) => {
-  const memberId = c.req.header('x-user-id') as MemberId | undefined;
-  if (!memberId) {
-    return c.json({ code: 'INVALID_REQUEST', message: 'x-user-id header required' }, 400);
+  const session = await getSessionForRequest(c);
+  if (!session.ok) {
+    const error = authErrorResponse(session);
+    return c.json(error!.body, error!.status);
+  }
+
+  const deps = buildDeps(c.env.DB);
+  const memberId = await ensureMemberForSession(deps.memberRepo, session);
+
+  const { success } = await c.env.CHAT_RATE_LIMITER.limit({ key: memberId });
+  if (!success) {
+    return c.json({ code: 'RATE_LIMITED', message: 'Too many requests. Please wait.' }, 429);
   }
 
   const body = await c.req.json<StartChatRequest>();
   if (!body.message?.trim()) {
     return c.json({ code: 'INVALID_REQUEST', message: 'message is required' }, 400);
   }
+  if (body.message.length > 4000) {
+    return c.json({ code: 'INVALID_REQUEST', message: 'Message too long (max 4000 chars)' }, 400);
+  }
 
-  const deps = buildDeps(c.env.DB);
   const result = await startChat(deps, memberId, body.message);
 
   if (!result.ok) {
@@ -73,9 +99,18 @@ chatRoutes.post('/', async (c) => {
 });
 
 chatRoutes.post('/:chatId/messages', async (c) => {
-  const memberId = c.req.header('x-user-id') as MemberId | undefined;
-  if (!memberId) {
-    return c.json({ code: 'INVALID_REQUEST', message: 'x-user-id header required' }, 400);
+  const session = await getSessionForRequest(c);
+  if (!session.ok) {
+    const error = authErrorResponse(session);
+    return c.json(error!.body, error!.status);
+  }
+
+  const deps = buildDeps(c.env.DB);
+  const memberId = await ensureMemberForSession(deps.memberRepo, session);
+
+  const { success } = await c.env.CHAT_RATE_LIMITER.limit({ key: memberId });
+  if (!success) {
+    return c.json({ code: 'RATE_LIMITED', message: 'Too many requests. Please wait.' }, 429);
   }
 
   const chatId = c.req.param('chatId') as ChatId;
@@ -83,8 +118,9 @@ chatRoutes.post('/:chatId/messages', async (c) => {
   if (!body.message?.trim()) {
     return c.json({ code: 'INVALID_REQUEST', message: 'message is required' }, 400);
   }
-
-  const deps = buildDeps(c.env.DB);
+  if (body.message.length > 4000) {
+    return c.json({ code: 'INVALID_REQUEST', message: 'Message too long (max 4000 chars)' }, 400);
+  }
 
   const chatResult = await deps.chatRepo.findById(chatId);
   if (!chatResult.ok) {
@@ -120,13 +156,16 @@ chatRoutes.post('/:chatId/messages', async (c) => {
 });
 
 chatRoutes.get('/:chatId/messages', async (c) => {
-  const memberId = c.req.header('x-user-id') as MemberId | undefined;
-  if (!memberId) {
-    return c.json({ code: 'INVALID_REQUEST', message: 'x-user-id header required' }, 400);
+  const session = await getSessionForRequest(c);
+  if (!session.ok) {
+    const error = authErrorResponse(session);
+    return c.json(error!.body, error!.status);
   }
 
-  const chatId = c.req.param('chatId') as ChatId;
   const deps = buildDeps(c.env.DB);
+  const memberId = await ensureMemberForSession(deps.memberRepo, session);
+
+  const chatId = c.req.param('chatId') as ChatId;
 
   const chatResult = await deps.chatRepo.findById(chatId);
   if (!chatResult.ok) {

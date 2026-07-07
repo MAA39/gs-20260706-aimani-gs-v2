@@ -3,20 +3,22 @@ import type { Env } from '../app.js';
 import type { MemberId } from '@gs-v2/shared';
 import type { CreateMemberRequest } from '@gs-v2/contracts';
 import { D1MemberRepository } from '@gs-v2/db';
+import { getSessionForRequest } from '../lib/auth-helpers.js';
 
 export const memberRoutes = new Hono<{ Bindings: Env }>();
 
 memberRoutes.post('/', async (c) => {
   const body = await c.req.json<CreateMemberRequest>();
-  if (!body.displayName?.trim() || !body.role) {
-    return c.json({ code: 'INVALID_REQUEST', message: 'displayName and role are required' }, 400);
+  if (!body.displayName?.trim()) {
+    return c.json({ code: 'INVALID_REQUEST', message: 'displayName is required' }, 400);
   }
 
   const repo = new D1MemberRepository(c.env.DB);
-  const memberId = crypto.randomUUID() as MemberId;
+  const session = await getSessionForRequest(c);
+  const memberId = (session.ok ? session.user.id : crypto.randomUUID()) as MemberId;
   const result = await repo.create(memberId, {
     displayName: body.displayName,
-    role: body.role,
+    role: 'student',
     bio: body.bio,
     skills: body.skills,
     canHelpWith: body.canHelpWith,
