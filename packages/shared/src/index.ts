@@ -1,12 +1,10 @@
 type Brand<T, B extends string> = T & { readonly __brand: B };
 
-export type UserId = Brand<string, 'UserId'>;
 export type MemberId = Brand<string, 'MemberId'>;
 export type ChatId = Brand<string, 'ChatId'>;
 export type MessageId = Brand<string, 'MessageId'>;
 export type AiRunId = Brand<string, 'AiRunId'>;
 export type AiRunEventId = Brand<string, 'AiRunEventId'>;
-export type QuestionCardId = Brand<string, 'QuestionCardId'>;
 
 export type IdParseResult<T> =
   | { readonly ok: true; readonly value: T }

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env } from '../app.js';
 import type { MemberId } from '@gs-v2/shared';
 import { parseMemberId } from '@gs-v2/shared';
+
 import { parseCreateMemberRequest } from '@gs-v2/contracts';
 import type { MemberError } from '@gs-v2/domain';
 import { D1MemberRepository } from '@gs-v2/db';
@@ -42,7 +43,9 @@ memberRoutes.post('/', async (c) => {
 
   const repo = new D1MemberRepository(c.env.DB);
   const session = await getSessionForRequest(c);
-  const memberId = (session.ok ? session.user.id : crypto.randomUUID()) as MemberId;
+  // session idはparseを通し、不正形式なら匿名IDへフォールバック
+  const sessionId = session.ok ? parseMemberId(session.user.id) : null;
+  const memberId = sessionId?.ok ? sessionId.value : (crypto.randomUUID() as MemberId);
   const result = await repo.create(memberId, {
     displayName: parsed.value.displayName,
     role: 'student',

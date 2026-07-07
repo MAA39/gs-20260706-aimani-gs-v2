@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, AppVars } from '../app.js';
 import type { MemberId, ChatId, AiRunId, MessageId } from '@gs-v2/shared';
-import { parseChatId } from '@gs-v2/shared';
+import { parseChatId, parseMemberId } from '@gs-v2/shared';
 import { parseStartChatRequest, parseSendMessageRequest } from '@gs-v2/contracts';
 import { startChat, sendMessage, listChatMessages } from '@gs-v2/domain';
 import type { StartChatError, SendMessageError, ListChatMessagesError, MemberError, Result } from '@gs-v2/domain';
@@ -53,7 +53,11 @@ async function ensureMemberForSession(
   memberRepo: D1MemberRepository,
   session: AuthenticatedSession,
 ): Promise<Result<MemberId, MemberError>> {
-  const memberId = session.user.id as MemberId;
+  const parsedId = parseMemberId(session.user.id);
+  if (!parsedId.ok) {
+    return err({ _tag: 'MemberDbFailure', operation: `invalid session user id (${parsedId.reason})` });
+  }
+  const memberId = parsedId.value;
   const existing = await memberRepo.findById(memberId);
   if (existing.ok) return ok(memberId);
   if (existing.error._tag !== 'MemberNotFound') return err(existing.error);
