@@ -11,3 +11,4 @@ dist/
 .codex/
 .codex-reports/
 .turbo/
+doc_index.json
