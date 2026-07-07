@@ -24,6 +24,6 @@
 ## 技術制約
 
 - packages/domain はI/O禁止（純粋TS）。外界依存は全てPort interfaceで受け、呼び出し側が引数注入（`deps: { repo, clock, idGen }`）で渡す（ADR-V2-006）
-- Flue Agentの設定はapps/agent/に閉じる
+- Flue Agentの設定はapps/worker/内に閉じる（Hono + Flue同居構成）
 - D1マイグレーションはpackages/db/migrations/に置く
 - wrangler.jsoncのmigrations_dirは必ず設定する（V1での学び）

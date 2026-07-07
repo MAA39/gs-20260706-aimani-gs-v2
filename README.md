@@ -14,8 +14,26 @@
 - TypeScript / Hono / Cloudflare Workers / D1
 - TanStack Start（SSR）
 - Port & Adapter + Result型（packages/domain、I/O禁止・Effect-TSは見送り＝ADR-V2-006）
-- Flue（Agent Worker）
+- Flue 1.0-beta（Hono + Flue同居構成、apps/worker内）
 - Turborepo
+
+## モノレポ構成
+
+```
+apps/
+  worker/         # Hono + Flue 同居 (1 CF Worker) — API + AI壁打ちAgent
+  web/            # TanStack Start (SSR) — フロントエンド
+packages/
+  domain/         # 純粋TS、I/O禁止、Port interface + Result型
+  db/             # Drizzle + D1 Adapter → 将来 PgAdapter
+  shared/         # Brand型、Role enum、共通型
+  config/         # tsconfig.base.json
+```
+
+## 本番URL
+
+- Worker API: https://aimani-gs-v2.masa-nekoshinshi39.workers.dev/
+- Web: https://aimani-gs-v2-web.masa-nekoshinshi39.workers.dev/
 
 ## 正本の場所
 

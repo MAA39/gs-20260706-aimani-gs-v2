@@ -11,6 +11,10 @@ amidala-refactoring の `docs/codex/` と同じ運用: **編集禁止、原文�
 | 02 | [02-d1-drizzle-port-adapter.md](02-d1-drizzle-port-adapter.md) | D1 + Drizzle + Port&Adapter 実装パターン | 手動調査 + amidala知見 |
 | 03 | [03-linear-documents-summary.md](03-linear-documents-summary.md) | Linear文書9本の調査サマリ | Linear API直叩き |
 | 04 | [04-design-decisions.md](04-design-decisions.md) | 確定設計判断一覧（壁打ち結果） | セッション内壁打ち |
+| 05 | [05-bs-job-board-flue-patterns.md](05-bs-job-board-flue-patterns.md) | bs-job-board Flue Agent実装パターン | Codex (codex-rescue) |
+| 06 | [06-bs-job-board-gap-analysis.md](06-bs-job-board-gap-analysis.md) | bs-job-board vs V2 差分分析・ブラッシュアップ提案 | Codex (codex-rescue) |
+| 07 | [07-bs-job-board-d1-patterns.md](07-bs-job-board-d1-patterns.md) | bs-job-board D1スキーマ・クエリ・パイプライン調査 | Codex (codex-rescue) |
+| 08 | [08-bs-job-board-architecture-comparison.md](08-bs-job-board-architecture-comparison.md) | bs-job-board アーキテクチャ比較・移植戦略 | Codex (codex-rescue) |
 
 ## 運用ルール
 
