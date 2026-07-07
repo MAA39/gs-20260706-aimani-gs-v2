@@ -9,7 +9,16 @@
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
+  "exports": {
+    ".": "./src/index.ts",
+    "./migrations/*": "./migrations/*"
+  },
+  "dependencies": {
+    "@gs-v2/shared": "workspace:*",
+    "@gs-v2/domain": "workspace:*"
+  },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260601.0",
     "typescript": "^5.8.0"
   }
 }

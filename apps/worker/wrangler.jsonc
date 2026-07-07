@@ -6,5 +6,13 @@
   "main": "src/index.ts",
   "observability": {
     "enabled": true
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "aimani-gs-v2-db",
+      "database_id": "",
+      "migrations_dir": "../../packages/db/migrations"
+    }
+  ]
 }

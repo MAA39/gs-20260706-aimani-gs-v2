@@ -1,1 +1,3 @@
-// D1 Adapter — Day 2 で Drizzle schema + D1Adapter を実装
+export { D1MemberRepository } from './adapters/d1-member-repository.js';
+export { D1ChatRepository } from './adapters/d1-chat-repository.js';
+export { D1AiRunRepository } from './adapters/d1-ai-run-repository.js';

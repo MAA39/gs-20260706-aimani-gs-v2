@@ -9,6 +9,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@gs-v2/contracts": "workspace:*",
+    "@gs-v2/db": "workspace:*",
+    "@gs-v2/domain": "workspace:*",
+    "@gs-v2/shared": "workspace:*",
     "hono": "^4.7.0"
   },
   "devDependencies": {
