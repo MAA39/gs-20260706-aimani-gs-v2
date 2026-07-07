@@ -1,0 +1,85 @@
+import {
+  type FlueContext,
+  type WorkflowRouteHandler,
+} from '@flue/runtime';
+import type { Env } from '../index.js';
+import type { AiRunId, ChatId, MessageId } from '@gs-v2/shared';
+import { sparringAgent } from '../agents/sparring-agent.js';
+import { D1ChatRepository } from '@gs-v2/db';
+import { D1AiRunRepository } from '@gs-v2/db';
+
+interface SparringPayload {
+  readonly aiRunId: AiRunId;
+  readonly chatId: ChatId;
+  readonly triggerMessageId: MessageId;
+}
+
+export const route: WorkflowRouteHandler = async (_c, next) => next();
+
+export async function run({ payload, env, init }: FlueContext<unknown, Env>) {
+  const input = payload as SparringPayload;
+  const chatRepo = new D1ChatRepository(env.DB);
+  const aiRunRepo = new D1AiRunRepository(env.DB);
+
+  const admitResult = await aiRunRepo.markAdmitted(input.aiRunId);
+  if (!admitResult.ok) return;
+
+  const messagesResult = await chatRepo.listMessages(input.chatId);
+  if (!messagesResult.ok) {
+    await aiRunRepo.fail(input.aiRunId, messagesResult.error._tag);
+    return;
+  }
+
+  const conversationHistory = messagesResult.value
+    .map((m) => `[${m.senderType}]: ${m.body}`)
+    .join('\n');
+
+  const harness = await init(sparringAgent);
+  const session = await harness.session();
+
+  const generateResult = await aiRunRepo.markGenerating(input.aiRunId, session.name ?? crypto.randomUUID());
+  if (!generateResult.ok) {
+    await aiRunRepo.fail(input.aiRunId, 'CAS conflict on generating transition');
+    return;
+  }
+
+  try {
+    const response = await session.prompt(
+      `以下の会話履歴に基づいて、壁打ち相手として応答してください。\n\n${conversationHistory}`,
+    );
+
+    const aiMessageBody = response.text;
+    const sequenceResult = await chatRepo.getNextSequence(input.chatId);
+    if (!sequenceResult.ok) {
+      await aiRunRepo.fail(input.aiRunId, sequenceResult.error._tag);
+      return;
+    }
+
+    const aiMessageId = crypto.randomUUID() as MessageId;
+    const appendResult = await chatRepo.appendMessage(aiMessageId, {
+      chatId: input.chatId,
+      senderType: 'ai',
+      body: aiMessageBody,
+    });
+    if (!appendResult.ok) {
+      await aiRunRepo.fail(input.aiRunId, appendResult.error._tag);
+      return;
+    }
+
+    const textEncoder = new TextEncoder();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', textEncoder.encode(aiMessageBody));
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const resultHash = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+
+    await aiRunRepo.complete({
+      aiRunId: input.aiRunId,
+      resultMessageIds: [aiMessageId],
+      promptTokens: response.usage?.input ?? 0,
+      completionTokens: response.usage?.output ?? 0,
+      resultHash,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'Unknown workflow error';
+    await aiRunRepo.fail(input.aiRunId, message.slice(0, 500));
+  }
+}

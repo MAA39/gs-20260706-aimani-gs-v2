@@ -1,5 +1,5 @@
-// Flue Agent統合はDay 3。ここにcreateAgent()定義を置く。
-// 現時点はプロンプト定義のみ。Flue runtime依存を入れる前の足場。
+import { createAgent } from '@flue/runtime';
+import type { Env } from '../index.js';
 
 export const SPARRING_INSTRUCTIONS = `あなたはG's Academyの壁打ち相手AIです。
 
@@ -24,3 +24,8 @@ export const SPARRING_INSTRUCTIONS = `あなたはG's Academyの壁打ち相手A
 会話の中で技術テーマ・悩みの方向性が見えたら、内部的にメモする。
 これは後でG'sメンバーとのマッチングに使われる。
 `;
+
+export const sparringAgent = createAgent<unknown, Env>(() => ({
+  model: 'anthropic/claude-sonnet-4-20250514',
+  instructions: SPARRING_INSTRUCTIONS,
+}));

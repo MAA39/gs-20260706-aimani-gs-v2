@@ -11,8 +11,18 @@
     {
       "binding": "DB",
       "database_name": "aimani-gs-v2-db",
-      "database_id": "",
+      "database_id": "28d215ff-053d-4ffd-b312-300bd9eafb8f",
       "migrations_dir": "../../packages/db/migrations"
     }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "FLUE_SPARRING_AGENT", "class_name": "FlueSparringAgent" },
+      { "name": "FLUE_SPARRING_WORKFLOW", "class_name": "FlueSparringWorkflow" },
+      { "name": "FLUE_REGISTRY", "class_name": "FlueRegistry" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["FlueRegistry", "FlueSparringAgent", "FlueSparringWorkflow"] }
   ]
 }

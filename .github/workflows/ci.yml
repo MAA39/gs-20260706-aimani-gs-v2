@@ -1,0 +1,179 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TURBO_TELEMETRY_DISABLED: "1"
+
+jobs:
+  typecheck:
+    name: pnpm install + turbo typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: corepack prepare pnpm@11.2.2 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec turbo typecheck --output-logs=errors-only
+
+  build:
+    name: turbo build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: corepack prepare pnpm@11.2.2 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec turbo build --output-logs=errors-only
+
+  architecture-guards:
+    name: Architecture guard grep checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: packages/domain throw guard
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          run_forbidden_grep() {
+            local description="$1"
+            shift
+
+            local matches=""
+            local status=0
+            set +e
+            matches="$("$@" 2>&1)"
+            status=$?
+            set -e
+
+            if [ "$status" -eq 0 ]; then
+              echo "::error::$description"
+              echo "$matches"
+              exit 1
+            fi
+
+            if [ "$status" -ne 1 ]; then
+              echo "::error::$description grep failed"
+              echo "$matches"
+              exit "$status"
+            fi
+          }
+
+          run_forbidden_grep "packages/domain must not contain throw new Error" \
+            grep -RInF --include='*.ts' --include='*.tsx' -- 'throw new Error' packages/domain
+      - name: packages/domain I/O guard
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          run_forbidden_grep() {
+            local description="$1"
+            shift
+
+            local matches=""
+            local status=0
+            set +e
+            matches="$("$@" 2>&1)"
+            status=$?
+            set -e
+
+            if [ "$status" -eq 0 ]; then
+              echo "::error::$description"
+              echo "$matches"
+              exit 1
+            fi
+
+            if [ "$status" -ne 1 ]; then
+              echo "::error::$description grep failed"
+              echo "$matches"
+              exit "$status"
+            fi
+          }
+
+          run_forbidden_grep "packages/domain must not call runtime I/O APIs" \
+            grep -RInE --include='*.ts' --include='*.tsx' -- \
+              '(^|[^[:alnum:]_$])(fetch|setTimeout|setInterval)[[:space:]]*\(' packages/domain
+
+          run_forbidden_grep "packages/domain must not depend on platform I/O bindings" \
+            grep -RInE --include='*.ts' --include='*.tsx' -- \
+              'D1Database|KVNamespace|R2Bucket|DurableObject(Namespace|State)?|ExecutionContext|Queue<|process\.env|env\.[[:alnum:]_]+' packages/domain
+
+          run_forbidden_grep "packages/domain must not import Node I/O modules" \
+            grep -RInE --include='*.ts' --include='*.tsx' -- \
+              "from[[:space:]]+[\"'](node:)?(fs|fs/promises|net|http|https|dns|dgram|tls|timers|timers/promises|child_process)[\"']|import[[:space:]]+[\"'](node:)?(fs|fs/promises|net|http|https|dns|dgram|tls|timers|timers/promises|child_process)[\"']|require[[:space:]]*\\([[:space:]]*[\"'](node:)?(fs|fs/promises|net|http|https|dns|dgram|tls|timers|timers/promises|child_process)[\"'][[:space:]]*\\)" packages/domain
+      - name: wrangler migrations_dir guard
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! grep -Eq '"migrations_dir"[[:space:]]*:[[:space:]]*"\.\./\.\./packages/db/migrations"' apps/worker/wrangler.jsonc; then
+            echo "::error::apps/worker/wrangler.jsonc must configure migrations_dir for packages/db/migrations"
+            exit 1
+          fi
+      - name: repository throw guard
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          run_forbidden_grep() {
+            local description="$1"
+            shift
+
+            local matches=""
+            local status=0
+            set +e
+            matches="$("$@" 2>&1)"
+            status=$?
+            set -e
+
+            if [ "$status" -eq 0 ]; then
+              echo "::error::$description"
+              echo "$matches"
+              exit 1
+            fi
+
+            if [ "$status" -ne 1 ]; then
+              echo "::error::$description grep failed"
+              echo "$matches"
+              exit "$status"
+            fi
+          }
+
+          run_forbidden_grep ".ts files excluding test files must not contain throw new Error(" \
+            grep -RInE --include='*.ts' --exclude='*.test.ts' --exclude='*.spec.ts' --exclude='*.d.ts' --exclude-dir='.git' --exclude-dir='node_modules' --exclude-dir='dist' --exclude-dir='.turbo' --exclude-dir='.wrangler' --exclude-dir='.flue-vite' -- \
+              'throw[[:space:]]+new[[:space:]]+Error[[:space:]]*\(' .
+
+  test-slot:
+    name: Future test execution slot
+    runs-on: ubuntu-latest
+    needs: [typecheck, build, architecture-guards]
+    timeout-minutes: 5
+    steps:
+      - run: echo "Reserved for real test execution when package test scripts exist."

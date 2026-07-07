@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { dispatch } from '@flue/runtime';
 import type { Env } from '../index.js';
 import type { MemberId, ChatId } from '@gs-v2/shared';
 import type { StartChatRequest, SendMessageRequest } from '@gs-v2/contracts';
@@ -42,6 +43,16 @@ chatRoutes.post('/', async (c) => {
     }
   }
 
+  dispatch({
+    agent: 'sparring-workflow',
+    id: result.value.aiRun.id,
+    input: {
+      aiRunId: result.value.aiRun.id,
+      chatId: result.value.chat.id,
+      triggerMessageId: result.value.humanMessage.id,
+    },
+  }).catch(() => {});
+
   return c.json({
     chatId: result.value.chat.id,
     messageId: result.value.humanMessage.id,
@@ -74,6 +85,16 @@ chatRoutes.post('/:chatId/messages', async (c) => {
         return c.json({ code: 'INTERNAL_ERROR', message: result.error._tag }, 500);
     }
   }
+
+  dispatch({
+    agent: 'sparring-workflow',
+    id: result.value.aiRun.id,
+    input: {
+      aiRunId: result.value.aiRun.id,
+      chatId: chatId,
+      triggerMessageId: result.value.humanMessage.id,
+    },
+  }).catch(() => {});
 
   return c.json({
     messageId: result.value.humanMessage.id,

@@ -5,6 +5,7 @@ dist/
 .dev.vars
 *.log
 .DS_Store
+.claude/
 .codex/
 .codex-reports/
 .turbo/

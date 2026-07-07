@@ -9,15 +9,18 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@flue/runtime": "1.0.0-beta.2",
     "@gs-v2/contracts": "workspace:*",
     "@gs-v2/db": "workspace:*",
     "@gs-v2/domain": "workspace:*",
     "@gs-v2/shared": "workspace:*",
+    "agents": "^0.16.2",
     "hono": "^4.7.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260601.0",
-    "wrangler": "^4.0.0",
-    "typescript": "^5.8.0"
+    "@flue/cli": "1.0.0-beta.1",
+    "typescript": "^5.8.0",
+    "wrangler": "^4.0.0"
   }
 }
