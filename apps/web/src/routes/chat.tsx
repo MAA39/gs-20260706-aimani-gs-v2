@@ -144,9 +144,8 @@ function ChatPage() {
     },
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = input.trim();
+  const submitMessage = (message: string) => {
+    const trimmed = message.trim();
     if (!trimmed) return;
     setInput('');
     setUiError(null);
@@ -156,6 +155,19 @@ function ChatPage() {
     } else {
       startMutation.mutate(trimmed);
     }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    submitMessage(input);
+  };
+
+  // Enter送信 / Shift+Enter改行 / 日本語IME変換確定は送信しない（v1移植パターン）
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return;
+    e.preventDefault();
+    if (isSending || waitingForAi) return;
+    submitMessage(input);
   };
 
   if (sessionLoading) {
@@ -194,8 +206,22 @@ function ChatPage() {
       <main style={styles.messages}>
         {!chatId && messages.length === 0 && (
           <div style={styles.empty}>
-            <p style={styles.emptyTitle}>何に詰まっていますか？</p>
+            <p style={styles.emptyTitle}>何に困っていますか？</p>
             <p style={styles.emptySubtitle}>壁打ちAIが思考の整理を手伝います</p>
+            <div style={styles.starterButtons}>
+              {['課題で詰まっている', 'チーム開発の困りごと', '進路・キャリア', 'メンター面談の準備'].map((category) => (
+                <button
+                  key={category}
+                  type="button"
+                  style={styles.starterButton}
+                  onClick={() => submitMessage(category)}
+                  disabled={isSending}
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
+            <p style={styles.privacyNote}>AIに話した内容は、あなたが出すまで誰にも見えません</p>
           </div>
         )}
 
@@ -230,16 +256,17 @@ function ChatPage() {
       </main>
 
       <form style={styles.inputArea} onSubmit={handleSubmit}>
-        <input
+        <textarea
           style={styles.input}
-          type="text"
+          rows={2}
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="詰まっていること、考えていることを書いてみてください"
+          onKeyDown={handleKeyDown}
+          placeholder="困っていることを書いてください..."
           disabled={isSending}
         />
         <button style={styles.sendButton} type="submit" disabled={isSending || waitingForAi || !input.trim()}>
-          {isSending ? '送信中...' : waitingForAi ? 'AI応答待ち' : '送信'}
+          {isSending ? '送信中...' : waitingForAi ? 'AI応答待ち' : '送る'}
         </button>
       </form>
     </div>
@@ -316,6 +343,28 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     margin: 0,
   },
+  starterButtons: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 20,
+    maxWidth: 480,
+  },
+  starterButton: {
+    padding: '10px 16px',
+    fontSize: 14,
+    border: '1px solid #ccc',
+    borderRadius: 20,
+    background: 'white',
+    color: '#333',
+    cursor: 'pointer',
+  },
+  privacyNote: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 24,
+  },
   bubble: {
     padding: '10px 14px',
     borderRadius: 12,
@@ -388,6 +437,9 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid #ccc',
     borderRadius: 8,
     outline: 'none',
+    resize: 'none' as const,
+    fontFamily: 'inherit',
+    lineHeight: 1.5,
   },
   sendButton: {
     padding: '10px 20px',
