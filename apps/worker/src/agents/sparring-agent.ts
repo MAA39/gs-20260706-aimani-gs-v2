@@ -1,4 +1,4 @@
-import { createAgent } from '@flue/runtime';
+import { createAgent, registerProvider } from '@flue/runtime';
 import type { Env } from '../app.js';
 
 export const SPARRING_INSTRUCTIONS = `あなたはG's Academyの壁打ち相手AIです。
@@ -25,10 +25,20 @@ export const SPARRING_INSTRUCTIONS = `あなたはG's Academyの壁打ち相手A
 これは後でG'sメンバーとのマッチングに使われる。
 `;
 
-const sparringAgent = createAgent<unknown, Env>(() => ({
-  model: 'anthropic/claude-sonnet-4-20250514',
-  instructions: SPARRING_INSTRUCTIONS,
-}));
+const sparringAgent = createAgent<unknown, Env>((ctx) => {
+  registerProvider('sakura', {
+    api: 'openai-completions',
+    baseUrl: 'https://api.ai.sakura.ad.jp/v1',
+    apiKey: ctx.env.SAKURA_API_TOKEN,
+    models: {
+      'gpt-oss-120b': { contextWindow: 128_000, maxTokens: 4_096 },
+    },
+  });
+  return {
+    model: 'sakura/gpt-oss-120b',
+    instructions: SPARRING_INSTRUCTIONS,
+  };
+});
 
 export { sparringAgent };
 export default sparringAgent;

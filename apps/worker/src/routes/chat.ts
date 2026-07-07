@@ -1,6 +1,5 @@
 import { Hono } from 'hono';
-import { dispatch } from '@flue/runtime';
-import type { Env } from '../app.js';
+import type { Env, AppVars } from '../app.js';
 import type { MemberId, ChatId } from '@gs-v2/shared';
 import type { StartChatRequest, SendMessageRequest } from '@gs-v2/contracts';
 import { startChat } from '@gs-v2/domain';
@@ -9,7 +8,18 @@ import { D1ChatRepository } from '@gs-v2/db';
 import { D1MemberRepository } from '@gs-v2/db';
 import { D1AiRunRepository } from '@gs-v2/db';
 
-export const chatRoutes = new Hono<{ Bindings: Env }>();
+export const chatRoutes = new Hono<{ Bindings: Env; Variables: AppVars }>();
+
+function triggerWorkflow(appFetch: AppVars['appFetch'], env: Env, executionCtx: { waitUntil: (p: Promise<unknown>) => void; passThroughOnException: () => void }, payload: Record<string, string>) {
+  const req = new Request('http://internal/workflows/sparring-workflow', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  executionCtx.waitUntil(
+    Promise.resolve(appFetch(req, env, executionCtx as ExecutionContext)).catch(() => {}),
+  );
+}
 
 function buildDeps(db: D1Database) {
   return {
@@ -43,15 +53,11 @@ chatRoutes.post('/', async (c) => {
     }
   }
 
-  dispatch({
-    agent: 'sparring-workflow',
-    id: result.value.aiRun.id,
-    input: {
-      aiRunId: result.value.aiRun.id,
-      chatId: result.value.chat.id,
-      triggerMessageId: result.value.humanMessage.id,
-    },
-  }).catch(() => {});
+  triggerWorkflow(c.var.appFetch, c.env, c.executionCtx, {
+    aiRunId: result.value.aiRun.id,
+    chatId: result.value.chat.id,
+    triggerMessageId: result.value.humanMessage.id,
+  });
 
   return c.json({
     chatId: result.value.chat.id,
@@ -86,15 +92,11 @@ chatRoutes.post('/:chatId/messages', async (c) => {
     }
   }
 
-  dispatch({
-    agent: 'sparring-workflow',
-    id: result.value.aiRun.id,
-    input: {
-      aiRunId: result.value.aiRun.id,
-      chatId: chatId,
-      triggerMessageId: result.value.humanMessage.id,
-    },
-  }).catch(() => {});
+  triggerWorkflow(c.var.appFetch, c.env, c.executionCtx, {
+    aiRunId: result.value.aiRun.id,
+    chatId: chatId,
+    triggerMessageId: result.value.humanMessage.id,
+  });
 
   return c.json({
     messageId: result.value.humanMessage.id,
