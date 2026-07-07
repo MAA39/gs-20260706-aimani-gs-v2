@@ -12,10 +12,17 @@ export type ChatNotOwned = {
   readonly actorMemberId: string;
 };
 
+export type AiRunInFlight = {
+  readonly _tag: 'AiRunInFlight';
+  readonly chatId: string;
+  readonly aiRunId: string;
+};
+
 export type SendMessageError =
   | ChatError
   | AiRunError
-  | ChatNotOwned;
+  | ChatNotOwned
+  | AiRunInFlight;
 
 export interface SendMessageOutput {
   readonly humanMessage: Message;
@@ -43,6 +50,13 @@ export async function sendMessage(
 
   if (chatResult.value.status === 'archived') {
     return { ok: false, error: { _tag: 'ChatArchived', chatId } };
+  }
+
+  // 1チャット1 in-flight run: AI応答待ち中の追加送信は拒否する（TSU-004裁定A）
+  const activeRunResult = await deps.aiRunRepo.findActiveByChatId(chatId);
+  if (!activeRunResult.ok) return activeRunResult;
+  if (activeRunResult.value !== null) {
+    return { ok: false, error: { _tag: 'AiRunInFlight', chatId, aiRunId: activeRunResult.value.id } };
   }
 
   const messageId = deps.idGen() as MessageId;

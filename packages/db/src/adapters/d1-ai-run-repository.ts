@@ -98,6 +98,18 @@ export class D1AiRunRepository implements AiRunRepository {
     return this.findById(id);
   }
 
+  async findActiveByChatId(chatId: string): Promise<Result<AiRun | null, AiRunError>> {
+    try {
+      const row = await this.db
+        .prepare(`SELECT * FROM ai_runs WHERE chat_id = ? AND status IN ('queued', 'admitted', 'generating', 'repairing') LIMIT 1`)
+        .bind(chatId)
+        .first<AiRunRow>();
+      return ok(row ? rowToAiRun(row) : null);
+    } catch {
+      return err({ _tag: 'AiRunDbFailure', operation: 'findActiveByChatId' });
+    }
+  }
+
   async markAdmitted(id: AiRunId): Promise<Result<void, AiRunError>> {
     return this.casTransition(id, 'queued', 'admitted');
   }

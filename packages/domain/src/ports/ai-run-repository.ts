@@ -10,6 +10,7 @@ export type AiRunError =
 
 export interface AiRunRepository {
   createQueued(id: AiRunId, input: CreateQueuedRunInput): Promise<Result<AiRun, AiRunError>>;
+  findActiveByChatId(chatId: string): Promise<Result<AiRun | null, AiRunError>>;
   markAdmitted(id: AiRunId): Promise<Result<void, AiRunError>>;
   markGenerating(id: AiRunId, flueRunId: string): Promise<Result<void, AiRunError>>;
   markRepairing(id: AiRunId): Promise<Result<void, AiRunError>>;

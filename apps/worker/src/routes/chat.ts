@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Env, AppVars } from '../app.js';
-import type { MemberId } from '@gs-v2/shared';
+import type { MemberId, ChatId, AiRunId, MessageId } from '@gs-v2/shared';
 import { parseChatId } from '@gs-v2/shared';
 import { parseStartChatRequest, parseSendMessageRequest } from '@gs-v2/contracts';
 import { startChat, sendMessage, listChatMessages } from '@gs-v2/domain';
@@ -34,6 +34,8 @@ function domainErrorToHttp(error: DomainError): HttpFailure {
       return { status: 409, body: { code: 'CHAT_ARCHIVED', message: `Chat ${error.chatId} is archived` } };
     case 'MessageSequenceConflict':
       return { status: 409, body: { code: 'MESSAGE_CONFLICT', message: 'Concurrent send detected. Please retry.' } };
+    case 'AiRunInFlight':
+      return { status: 409, body: { code: 'AI_RUN_IN_FLIGHT', message: 'AI response is still in progress. Please wait for it.' } };
     case 'AiRunConflict':
       return { status: 409, body: { code: 'AI_RUN_CONFLICT', message: `AI run conflict: ${error.reason}` } };
     case 'AiRunNotFound':
@@ -65,7 +67,25 @@ async function ensureMemberForSession(
   return ok(memberId);
 }
 
-function triggerWorkflow(appFetch: AppVars['appFetch'], env: Env, executionCtx: { waitUntil: (p: Promise<unknown>) => void; passThroughOnException: () => void }, payload: Record<string, string>) {
+interface WorkflowDispatchPayload {
+  readonly aiRunId: AiRunId;
+  readonly chatId: ChatId;
+  readonly triggerMessageId: MessageId;
+}
+
+// dispatch失敗でqueued固着させない: runをfailedにし、systemメッセージで可視化する（ADV-008）
+async function markDispatchFailed(deps: ReturnType<typeof buildDeps>, payload: WorkflowDispatchPayload): Promise<void> {
+  const failResult = await deps.aiRunRepo.fail(payload.aiRunId, 'workflow dispatch failed');
+  // fail不可 = 別経路でrunが進行中。触らない
+  if (!failResult.ok) return;
+  await deps.chatRepo.appendMessage(crypto.randomUUID() as MessageId, {
+    chatId: payload.chatId,
+    senderType: 'system',
+    body: 'AI応答の起動に失敗しました。もう一度送信してください。',
+  });
+}
+
+function triggerWorkflow(appFetch: AppVars['appFetch'], env: Env, executionCtx: { waitUntil: (p: Promise<unknown>) => void; passThroughOnException: () => void }, deps: ReturnType<typeof buildDeps>, payload: WorkflowDispatchPayload) {
   const req = new Request('http://internal/workflows/sparring-workflow', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-internal-token': env.INTERNAL_ROUTE_SECRET },
@@ -73,11 +93,15 @@ function triggerWorkflow(appFetch: AppVars['appFetch'], env: Env, executionCtx: 
   });
   executionCtx.waitUntil(
     Promise.resolve(appFetch(req, env, executionCtx as ExecutionContext))
-      .then((res) => {
-        if (!res.ok) console.error('triggerWorkflow failed', { status: res.status, aiRunId: payload.aiRunId });
+      .then(async (res) => {
+        if (!res.ok) {
+          console.error('triggerWorkflow failed', { status: res.status, aiRunId: payload.aiRunId });
+          await markDispatchFailed(deps, payload);
+        }
       })
-      .catch((e) => {
+      .catch(async (e) => {
         console.error('triggerWorkflow error', { message: e instanceof Error ? e.message : String(e), aiRunId: payload.aiRunId });
+        await markDispatchFailed(deps, payload);
       }),
   );
 }
@@ -134,7 +158,7 @@ chatRoutes.post('/', async (c) => {
     return c.json(failure.body, failure.status);
   }
 
-  triggerWorkflow(c.var.appFetch, c.env, c.executionCtx, {
+  triggerWorkflow(c.var.appFetch, c.env, c.executionCtx, deps, {
     aiRunId: result.value.aiRun.id,
     chatId: result.value.chat.id,
     triggerMessageId: result.value.humanMessage.id,
@@ -187,7 +211,7 @@ chatRoutes.post('/:chatId/messages', async (c) => {
     return c.json(failure.body, failure.status);
   }
 
-  triggerWorkflow(c.var.appFetch, c.env, c.executionCtx, {
+  triggerWorkflow(c.var.appFetch, c.env, c.executionCtx, deps, {
     aiRunId: result.value.aiRun.id,
     chatId: chatIdResult.value,
     triggerMessageId: result.value.humanMessage.id,

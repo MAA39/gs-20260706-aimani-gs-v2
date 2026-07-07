@@ -28,6 +28,9 @@ function describeApiError(error: ApiClientError): UiError {
       if (error.status === 429) {
         return { kind: 'rate_limited', text: '送信が続きすぎています。少し待ってからもう一度お試しください。' };
       }
+      if (error.status === 409 && error.code === 'AI_RUN_IN_FLIGHT') {
+        return { kind: 'conflict', text: 'AIが応答を生成中です。応答が届いてから送信してください。' };
+      }
       if (error.status === 409) {
         return { kind: 'conflict', text: '送信が重なりました。もう一度お試しください。' };
       }
@@ -79,10 +82,11 @@ function ChatPage() {
 
   useEffect(() => {
     if (!waitingForAi) return;
-    const hasAiAfterLastHuman = messages.some(
-      (m) => m.senderType === 'ai' && m.sequence > lastHumanSeq,
+    // AI応答または失敗通知(system)のどちらでも待機を解除する
+    const hasReplyAfterLastHuman = messages.some(
+      (m) => (m.senderType === 'ai' || m.senderType === 'system') && m.sequence > lastHumanSeq,
     );
-    if (hasAiAfterLastHuman) {
+    if (hasReplyAfterLastHuman) {
       setWaitingForAi(false);
     }
   }, [messages, waitingForAi, lastHumanSeq]);
@@ -234,8 +238,8 @@ function ChatPage() {
           placeholder="詰まっていること、考えていることを書いてみてください"
           disabled={isSending}
         />
-        <button style={styles.sendButton} type="submit" disabled={isSending || !input.trim()}>
-          {isSending ? '送信中...' : '送信'}
+        <button style={styles.sendButton} type="submit" disabled={isSending || waitingForAi || !input.trim()}>
+          {isSending ? '送信中...' : waitingForAi ? 'AI応答待ち' : '送信'}
         </button>
       </form>
     </div>
@@ -244,14 +248,15 @@ function ChatPage() {
 
 function MessageBubble({ message }: { message: ChatMessage }) {
   const isHuman = message.senderType === 'human';
+  const isSystem = message.senderType === 'system';
   return (
     <div
       style={{
         ...styles.bubble,
-        ...(isHuman ? styles.humanBubble : styles.aiBubble),
+        ...(isHuman ? styles.humanBubble : isSystem ? styles.systemBubble : styles.aiBubble),
       }}
     >
-      <div style={styles.senderLabel}>{isHuman ? 'あなた' : 'AI'}</div>
+      <div style={styles.senderLabel}>{isHuman ? 'あなた' : isSystem ? 'システム' : 'AI'}</div>
       <div style={styles.messageBody}>{message.body}</div>
     </div>
   );
@@ -327,6 +332,13 @@ const styles: Record<string, React.CSSProperties> = {
     alignSelf: 'flex-start',
     background: '#f0f0f0',
     color: '#333',
+  },
+  systemBubble: {
+    alignSelf: 'center',
+    background: '#fff8e6',
+    color: '#8a6d1a',
+    border: '1px solid #f0e0b0',
+    fontSize: 13,
   },
   senderLabel: {
     fontSize: 11,

@@ -13,7 +13,7 @@ export { startChat } from './use-cases/start-chat.js';
 export type { StartChatDeps, StartChatOutput, StartChatError } from './use-cases/start-chat.js';
 
 export { sendMessage } from './use-cases/send-message.js';
-export type { SendMessageDeps, SendMessageOutput, SendMessageError, ChatNotOwned } from './use-cases/send-message.js';
+export type { SendMessageDeps, SendMessageOutput, SendMessageError, ChatNotOwned, AiRunInFlight } from './use-cases/send-message.js';
 
 export { listChatMessages } from './use-cases/list-chat-messages.js';
 export type { ListChatMessagesDeps, ListChatMessagesError } from './use-cases/list-chat-messages.js';
