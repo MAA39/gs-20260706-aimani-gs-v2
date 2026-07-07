@@ -17,12 +17,12 @@
   ],
   "durable_objects": {
     "bindings": [
-      { "name": "FLUE_SPARRING_AGENT", "class_name": "FlueSparringAgent" },
-      { "name": "FLUE_SPARRING_WORKFLOW", "class_name": "FlueSparringWorkflow" },
+      { "name": "FLUE_SPARRING_AGENT", "class_name": "FlueSparringAgentAgent" },
+      { "name": "FLUE_SPARRING_WORKFLOW", "class_name": "FlueSparringWorkflowWorkflow" },
       { "name": "FLUE_REGISTRY", "class_name": "FlueRegistry" }
     ]
   },
   "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["FlueRegistry", "FlueSparringAgent", "FlueSparringWorkflow"] }
+    { "tag": "v1", "new_sqlite_classes": ["FlueRegistry", "FlueSparringAgentAgent", "FlueSparringWorkflowWorkflow"] }
   ]
 }

@@ -2,7 +2,7 @@ import {
   type FlueContext,
   type WorkflowRouteHandler,
 } from '@flue/runtime';
-import type { Env } from '../index.js';
+import type { Env } from '../app.js';
 import type { AiRunId, ChatId, MessageId } from '@gs-v2/shared';
 import { sparringAgent } from '../agents/sparring-agent.js';
 import { D1ChatRepository } from '@gs-v2/db';

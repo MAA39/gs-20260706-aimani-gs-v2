@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { dispatch } from '@flue/runtime';
-import type { Env } from '../index.js';
+import type { Env } from '../app.js';
 import type { MemberId, ChatId } from '@gs-v2/shared';
 import type { StartChatRequest, SendMessageRequest } from '@gs-v2/contracts';
 import { startChat } from '@gs-v2/domain';

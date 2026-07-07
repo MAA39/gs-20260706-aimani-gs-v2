@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { Env } from '../index.js';
+import type { Env } from '../app.js';
 import type { MemberId } from '@gs-v2/shared';
 import type { CreateMemberRequest } from '@gs-v2/contracts';
 import { D1MemberRepository } from '@gs-v2/db';

@@ -1,5 +1,5 @@
 import { createAgent } from '@flue/runtime';
-import type { Env } from '../index.js';
+import type { Env } from '../app.js';
 
 export const SPARRING_INSTRUCTIONS = `あなたはG's Academyの壁打ち相手AIです。
 
@@ -25,7 +25,10 @@ export const SPARRING_INSTRUCTIONS = `あなたはG's Academyの壁打ち相手A
 これは後でG'sメンバーとのマッチングに使われる。
 `;
 
-export const sparringAgent = createAgent<unknown, Env>(() => ({
+const sparringAgent = createAgent<unknown, Env>(() => ({
   model: 'anthropic/claude-sonnet-4-20250514',
   instructions: SPARRING_INSTRUCTIONS,
 }));
+
+export { sparringAgent };
+export default sparringAgent;

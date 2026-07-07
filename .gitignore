@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .wrangler/
+.flue-vite/
+.flue-vite.wrangler.jsonc
 .tanstack/
 .dev.vars
 *.log

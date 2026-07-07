@@ -3,9 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "scripts": {
-    "dev": "wrangler dev",
-    "build": "wrangler deploy --dry-run --outdir dist",
-    "deploy": "wrangler deploy",
+    "dev": "flue dev --target cloudflare --port 8787",
+    "build": "flue build --target cloudflare",
+    "deploy": "flue build --target cloudflare && wrangler deploy --config dist/aimani_gs_v2/wrangler.json",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
