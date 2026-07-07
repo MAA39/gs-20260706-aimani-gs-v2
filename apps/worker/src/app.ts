@@ -40,6 +40,10 @@ app.use('/api/*', async (c, next) => {
 app.get('/', (c) => c.json({ status: 'ok', service: 'aimani-gs-v2' }));
 app.get('/api/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
+app.use('/api/chats/*', jsonBodyLimit(BODY_LIMITS.api));
+app.use('/api/chats', jsonBodyLimit(BODY_LIMITS.api));
+app.use('/api/members/*', jsonBodyLimit(BODY_LIMITS.api));
+app.use('/api/members', jsonBodyLimit(BODY_LIMITS.api));
 app.route('/api/chats', chatRoutes);
 app.route('/api/members', memberRoutes);
 

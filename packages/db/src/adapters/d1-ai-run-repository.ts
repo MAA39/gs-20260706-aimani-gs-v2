@@ -60,8 +60,12 @@ function rowToEvent(row: AiRunEventRow): AiRunEvent {
   };
 }
 
-function isUniqueConstraintFailure(cause: unknown): boolean {
-  return cause instanceof Error && cause.message.includes('UNIQUE constraint failed');
+function isUniqueConstraintFailure(cause: unknown, constraint: string): boolean {
+  return (
+    cause instanceof Error &&
+    cause.message.includes('UNIQUE constraint failed') &&
+    cause.message.includes(constraint)
+  );
 }
 
 const APPEND_EVENT_MAX_ATTEMPTS = 3;
@@ -89,7 +93,7 @@ export class D1AiRunRepository implements AiRunRepository {
           .bind(eventId, id, JSON.stringify({ stage: input.stage }), now),
       ]);
     } catch (cause) {
-      if (isUniqueConstraintFailure(cause)) {
+      if (isUniqueConstraintFailure(cause, 'ai_runs.idempotency_key')) {
         return err({ _tag: 'AiRunConflict', reason: 'IdempotencyKey' });
       }
       return err({ _tag: 'AiRunDbFailure', operation: 'createQueued' });
@@ -271,7 +275,7 @@ export class D1AiRunRepository implements AiRunRepository {
           .run();
         return;
       } catch (cause) {
-        if (isUniqueConstraintFailure(cause) && attempt < APPEND_EVENT_MAX_ATTEMPTS) continue;
+        if (isUniqueConstraintFailure(cause, 'ai_run_events.sequence') && attempt < APPEND_EVENT_MAX_ATTEMPTS) continue;
         console.error('appendEvent failed', { aiRunId, eventType, attempt });
         return;
       }

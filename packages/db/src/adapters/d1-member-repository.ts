@@ -36,8 +36,12 @@ function rowToMember(row: D1Row): Member {
   };
 }
 
-function isUniqueConstraintFailure(cause: unknown): boolean {
-  return cause instanceof Error && cause.message.includes('UNIQUE constraint failed');
+function isUniqueConstraintFailure(cause: unknown, constraint: string): boolean {
+  return (
+    cause instanceof Error &&
+    cause.message.includes('UNIQUE constraint failed') &&
+    cause.message.includes(constraint)
+  );
 }
 
 export class D1MemberRepository implements MemberRepository {
@@ -114,7 +118,7 @@ export class D1MemberRepository implements MemberRepository {
         )
         .run();
     } catch (cause) {
-      if (isUniqueConstraintFailure(cause)) {
+      if (isUniqueConstraintFailure(cause, 'members.id')) {
         return err({ _tag: 'MemberAlreadyExists', memberId: id });
       }
       return err({ _tag: 'MemberDbFailure', operation: 'create' });

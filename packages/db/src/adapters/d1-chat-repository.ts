@@ -44,8 +44,12 @@ function rowToMessage(row: MessageRow): Message {
   };
 }
 
-function isUniqueConstraintFailure(cause: unknown): boolean {
-  return cause instanceof Error && cause.message.includes('UNIQUE constraint failed');
+function isUniqueConstraintFailure(cause: unknown, constraint: string): boolean {
+  return (
+    cause instanceof Error &&
+    cause.message.includes('UNIQUE constraint failed') &&
+    cause.message.includes(constraint)
+  );
 }
 
 const APPEND_MESSAGE_MAX_ATTEMPTS = 3;
@@ -95,15 +99,17 @@ export class D1ChatRepository implements ChatRepository {
     for (let attempt = 1; attempt <= APPEND_MESSAGE_MAX_ATTEMPTS; attempt++) {
       const now = new Date().toISOString();
       try {
+        // chats起点の採番: 不存在chatは0行のままINSERTされず、ChatNotFoundとして返せる
         const row = await this.db
           .prepare(
             `INSERT INTO messages (id, chat_id, sender_type, body, sequence, created_at)
-             SELECT ?1, ?2, ?3, ?4, COALESCE(MAX(sequence), 0) + 1, ?5 FROM messages WHERE chat_id = ?2
+             SELECT ?1, c.id, ?3, ?4, COALESCE((SELECT MAX(m.sequence) FROM messages m WHERE m.chat_id = c.id), 0) + 1, ?5
+             FROM chats c WHERE c.id = ?2
              RETURNING sequence`,
           )
           .bind(id, input.chatId, input.senderType, input.body, now)
           .first<{ sequence: number }>();
-        if (!row) return err({ _tag: 'ChatDbFailure', operation: 'appendMessage' });
+        if (!row) return err({ _tag: 'ChatNotFound', chatId: input.chatId });
         return ok({
           id,
           chatId: input.chatId,
@@ -113,7 +119,7 @@ export class D1ChatRepository implements ChatRepository {
           createdAt: now,
         });
       } catch (cause) {
-        if (isUniqueConstraintFailure(cause)) {
+        if (isUniqueConstraintFailure(cause, 'messages.sequence')) {
           if (attempt < APPEND_MESSAGE_MAX_ATTEMPTS) continue;
           return err({ _tag: 'MessageSequenceConflict', chatId: input.chatId });
         }
