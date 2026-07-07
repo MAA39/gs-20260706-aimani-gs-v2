@@ -25,6 +25,18 @@ interface MessagesResponse {
   messages: ChatMessage[];
 }
 
+interface ChatSummary {
+  id: string;
+  title: string | null;
+  status: 'active' | 'archived';
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ChatListResponse {
+  chats: ChatSummary[];
+}
+
 export type ApiClientError =
   | { _tag: 'HttpError'; status: number; code: string; message: string }
   | { _tag: 'NetworkError'; message: string }
@@ -34,7 +46,7 @@ export type ApiResult<T> =
   | { ok: true; value: T }
   | { ok: false; error: ApiClientError };
 
-export type { ChatMessage, StartChatResponse, SendMessageResponse, MessagesResponse };
+export type { ChatMessage, StartChatResponse, SendMessageResponse, MessagesResponse, ChatSummary, ChatListResponse };
 
 async function readErrorBody(res: Response): Promise<{ code: string; message: string }> {
   try {
@@ -93,4 +105,8 @@ export function sendMessage(chatId: string, message: string): Promise<ApiResult<
 
 export function fetchMessages(chatId: string): Promise<ApiResult<MessagesResponse>> {
   return requestJson<MessagesResponse>(`/chats/${chatId}/messages`);
+}
+
+export function fetchChats(): Promise<ApiResult<ChatListResponse>> {
+  return requestJson<ChatListResponse>('/chats');
 }

@@ -51,6 +51,19 @@ describe('startChat', () => {
     }
   });
 
+  it('チャットのタイトルは最初の相談文の先頭50文字になる', async () => {
+    const memberRepo = new FakeMemberRepository();
+    const chatRepo = new FakeChatRepository();
+    const longMessage = 'あ'.repeat(60);
+
+    const result = await startChat(makeDeps(memberRepo, chatRepo), memberId('member-1'), longMessage);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.chat.title).toBe('あ'.repeat(50));
+    }
+  });
+
   it('チャット作成がDB失敗したらChatDbFailureを返し、メッセージ追加へ進まない', async () => {
     const memberRepo = new FakeMemberRepository();
     const chatRepo = new FakeChatRepository({

@@ -5,8 +5,10 @@ import {
   startChat,
   sendMessage,
   fetchMessages,
+  fetchChats,
   type ApiClientError,
   type ChatMessage,
+  type ChatSummary,
 } from '../lib/api-client';
 import { authClient } from '../lib/auth-client';
 
@@ -45,7 +47,15 @@ function describeApiError(error: ApiClientError): UiError {
 }
 
 function ChatPage() {
-  const { data: session, isPending: sessionLoading } = authClient.useSession();
+  const { data: session, isPending, error: sessionError } = authClient.useSession();
+  // セッション取得エラー（auth未設定503等）やスタックは未ログイン扱いにして無限ローディングを防ぐ
+  const [sessionTimedOut, setSessionTimedOut] = useState(false);
+  useEffect(() => {
+    if (!isPending) return;
+    const timer = setTimeout(() => setSessionTimedOut(true), 5_000);
+    return () => clearTimeout(timer);
+  }, [isPending]);
+  const sessionLoading = isPending && !sessionError && !sessionTimedOut;
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -69,6 +79,13 @@ function ChatPage() {
     enabled: !!chatId && !!session?.user,
     refetchInterval: waitingForAi ? 2_000 : false,
   });
+
+  const chatsQuery = useQuery({
+    queryKey: ['chats'],
+    queryFn: fetchChats,
+    enabled: !chatId && !!session?.user,
+  });
+  const pastChats: ChatSummary[] = chatsQuery.data?.ok ? chatsQuery.data.value.chats : [];
 
   const messagesResult = messagesQuery.data;
   const messages = messagesResult?.ok ? messagesResult.value.messages : [];
@@ -222,6 +239,27 @@ function ChatPage() {
               ))}
             </div>
             <p style={styles.privacyNote}>AIに話した内容は、あなたが出すまで誰にも見えません</p>
+            {pastChats.length > 0 && (
+              <div style={styles.historySection}>
+                <p style={styles.historyTitle}>前回の続きから</p>
+                {pastChats.slice(0, 5).map((chat) => (
+                  <button
+                    key={chat.id}
+                    type="button"
+                    style={styles.historyItem}
+                    onClick={() => {
+                      setChatId(chat.id);
+                      setUiError(null);
+                    }}
+                  >
+                    <span style={styles.historyItemTitle}>{chat.title || '（無題の壁打ち）'}</span>
+                    <span style={styles.historyItemDate}>
+                      {new Date(chat.updatedAt).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -364,6 +402,45 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     color: '#999',
     marginTop: 24,
+  },
+  historySection: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 6,
+    marginTop: 28,
+    width: '100%',
+    maxWidth: 420,
+  },
+  historyTitle: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: '#999',
+    margin: '0 0 4px',
+    textAlign: 'center' as const,
+  },
+  historyItem: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+    padding: '10px 14px',
+    fontSize: 13,
+    border: '1px solid #e0e0e0',
+    borderRadius: 10,
+    background: 'white',
+    color: '#333',
+    cursor: 'pointer',
+    textAlign: 'left' as const,
+  },
+  historyItemTitle: {
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
+  },
+  historyItemDate: {
+    fontSize: 11,
+    color: '#999',
+    flexShrink: 0,
   },
   bubble: {
     padding: '10px 14px',

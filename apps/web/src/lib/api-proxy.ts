@@ -59,7 +59,9 @@ export async function proxyApiRequest(
   splatPath: string,
 ): Promise<Response> {
   const url = new URL(request.url);
-  const upstreamUrl = `https://api/api/${splatPath}${url.search}`;
+  // Service Bindingはホスト名でルーティングしないが、ローカルdevではflue devのviteが
+  // Host検査をする。allowedHostsデフォルトで通る localhost を使う
+  const upstreamUrl = `https://localhost/api/${splatPath}${url.search}`;
 
   const upstreamHeaders = buildUpstreamHeaders(request.headers);
   upstreamHeaders.set('x-forwarded-host', url.host);

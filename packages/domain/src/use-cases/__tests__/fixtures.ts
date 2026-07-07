@@ -122,7 +122,7 @@ export class FakeChatRepository implements ChatRepository {
 
   async create(id: ChatId, input: CreateChatInput): Promise<Result<Chat, ChatError>> {
     this.calls.push('create');
-    return this.config.create ?? ok(makeChat({ id, memberId: input.memberId }));
+    return this.config.create ?? ok(makeChat({ id, memberId: input.memberId, title: input.title ?? null }));
   }
 
   async findById(id: ChatId): Promise<Result<Chat, ChatError>> {

@@ -3,7 +3,7 @@ import type { Env, AppVars } from '../app.js';
 import type { MemberId, ChatId, AiRunId, MessageId } from '@gs-v2/shared';
 import { parseChatId, parseMemberId } from '@gs-v2/shared';
 import { parseStartChatRequest, parseSendMessageRequest } from '@gs-v2/contracts';
-import { startChat, sendMessage, listChatMessages } from '@gs-v2/domain';
+import { startChat, sendMessage, listChatMessages, listMemberChats } from '@gs-v2/domain';
 import type { StartChatError, SendMessageError, ListChatMessagesError, MemberError, Result } from '@gs-v2/domain';
 import { ok, err } from '@gs-v2/domain';
 import { D1ChatRepository, D1MemberRepository, D1AiRunRepository } from '@gs-v2/db';
@@ -173,6 +173,37 @@ chatRoutes.post('/', async (c) => {
     messageId: result.value.humanMessage.id,
     aiRunId: result.value.aiRun.id,
   }, 201);
+});
+
+chatRoutes.get('/', async (c) => {
+  const session = await getSessionForRequest(c);
+  if (!session.ok) {
+    const error = authErrorResponse(session);
+    return c.json(error!.body, error!.status);
+  }
+
+  const deps = buildDeps(c.env.DB);
+  const memberResult = await ensureMemberForSession(deps.memberRepo, session);
+  if (!memberResult.ok) {
+    const failure = domainErrorToHttp(memberResult.error);
+    return c.json(failure.body, failure.status);
+  }
+
+  const result = await listMemberChats(deps, memberResult.value);
+  if (!result.ok) {
+    const failure = domainErrorToHttp(result.error);
+    return c.json(failure.body, failure.status);
+  }
+
+  return c.json({
+    chats: result.value.map((chat) => ({
+      id: chat.id,
+      title: chat.title,
+      status: chat.status,
+      createdAt: chat.createdAt,
+      updatedAt: chat.updatedAt,
+    })),
+  });
 });
 
 chatRoutes.post('/:chatId/messages', async (c) => {

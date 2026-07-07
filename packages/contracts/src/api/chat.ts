@@ -30,3 +30,15 @@ export interface ChatMessagesResponse {
   readonly chatId: string;
   readonly messages: readonly MessageDto[];
 }
+
+export interface ChatSummaryDto {
+  readonly id: string;
+  readonly title: string | null;
+  readonly status: 'active' | 'archived';
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface ChatListResponse {
+  readonly chats: readonly ChatSummaryDto[];
+}

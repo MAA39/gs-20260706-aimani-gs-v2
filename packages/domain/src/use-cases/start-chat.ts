@@ -34,7 +34,9 @@ export async function startChat(
   if (!memberResult.ok) return memberResult;
 
   const chatId = deps.idGen() as ChatId;
-  const chatResult = await deps.chatRepo.create(chatId, { memberId });
+  // 一覧表示用のタイトルは最初の相談文の先頭から取る
+  const title = messageBody.trim().slice(0, 50);
+  const chatResult = await deps.chatRepo.create(chatId, { memberId, title });
   if (!chatResult.ok) return chatResult;
 
   const messageId = deps.idGen() as MessageId;

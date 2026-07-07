@@ -17,3 +17,6 @@ export type { SendMessageDeps, SendMessageOutput, SendMessageError, ChatNotOwned
 
 export { listChatMessages } from './use-cases/list-chat-messages.js';
 export type { ListChatMessagesDeps, ListChatMessagesError } from './use-cases/list-chat-messages.js';
+
+export { listMemberChats } from './use-cases/list-member-chats.js';
+export type { ListMemberChatsDeps } from './use-cases/list-member-chats.js';
