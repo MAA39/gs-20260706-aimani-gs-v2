@@ -5,6 +5,7 @@ import { chatRoutes } from './routes/chat.js';
 import { memberRoutes } from './routes/member.js';
 import { aiRunRoutes } from './routes/ai-run.js';
 import { createAuth, resolveAuthBaseURL } from './auth.js';
+import { devBypassSession } from './lib/auth-helpers.js';
 import { jsonBodyLimit, BODY_LIMITS } from './middleware/body-limit.js';
 
 interface RateLimiter {
@@ -18,11 +19,14 @@ export interface Env {
   FLUE_SPARRING_WORKFLOW: DurableObjectNamespace;
   FLUE_REGISTRY: DurableObjectNamespace;
   INTERNAL_ROUTE_SECRET: string;
-  CHAT_RATE_LIMITER: RateLimiter;
+  // flue buildが生成するwrangler.jsonにrate_limitsが引き継がれない環境では未定義になる
+  CHAT_RATE_LIMITER?: RateLimiter;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL?: string;
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
+  /** ローカル開発専用。本番には設定しない（auth-helpers.devBypassSession参照） */
+  DEV_AUTH_BYPASS_USER_ID?: string;
 }
 
 export type AppFetch = (request: Request, env: Env, ctx: ExecutionContext) => Response | Promise<Response>;
@@ -50,6 +54,31 @@ app.route('/api/members', memberRoutes);
 app.route('/api/ai-runs', aiRunRoutes);
 
 const authHandler = async (c: Context<{ Bindings: Env; Variables: AppVars }>) => {
+  // ローカル開発専用バイパス: OAuth App未設定でもUIのセッション確認を通す（本番はこの変数を設定しない）
+  const bypass = devBypassSession(c.env);
+  if (bypass && new URL(c.req.url).pathname.endsWith('/get-session')) {
+    const now = new Date().toISOString();
+    return c.json({
+      session: {
+        id: 'dev-session',
+        userId: bypass.user.id,
+        token: 'dev-session-token',
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        createdAt: now,
+        updatedAt: now,
+      },
+      user: {
+        id: bypass.user.id,
+        name: bypass.user.name,
+        email: 'dev@localhost',
+        emailVerified: true,
+        image: null,
+        createdAt: now,
+        updatedAt: now,
+      },
+    });
+  }
+
   if (!c.env?.BETTER_AUTH_SECRET?.trim()) {
     return c.json({ error: 'service not configured' }, 503);
   }

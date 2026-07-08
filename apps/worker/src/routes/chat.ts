@@ -110,6 +110,15 @@ function triggerWorkflow(appFetch: AppVars['appFetch'], env: Env, executionCtx: 
   );
 }
 
+async function passesRateLimit(env: Env, key: string): Promise<boolean> {
+  if (!env.CHAT_RATE_LIMITER) {
+    console.warn('CHAT_RATE_LIMITER binding missing — allowing request');
+    return true;
+  }
+  const { success } = await env.CHAT_RATE_LIMITER.limit({ key });
+  return success;
+}
+
 function buildDeps(db: D1Database) {
   return {
     memberRepo: new D1MemberRepository(db),
@@ -142,8 +151,7 @@ chatRoutes.post('/', async (c) => {
   }
   const memberId = memberResult.value;
 
-  const { success } = await c.env.CHAT_RATE_LIMITER.limit({ key: memberId });
-  if (!success) {
+  if (!(await passesRateLimit(c.env, memberId))) {
     return c.json({ code: 'RATE_LIMITED', message: 'Too many requests. Please wait.' }, 429);
   }
 
@@ -221,8 +229,7 @@ chatRoutes.post('/:chatId/messages', async (c) => {
   }
   const memberId = memberResult.value;
 
-  const { success } = await c.env.CHAT_RATE_LIMITER.limit({ key: memberId });
-  if (!success) {
+  if (!(await passesRateLimit(c.env, memberId))) {
     return c.json({ code: 'RATE_LIMITED', message: 'Too many requests. Please wait.' }, 429);
   }
 

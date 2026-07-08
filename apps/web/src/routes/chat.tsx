@@ -81,6 +81,8 @@ function ChatPage() {
     queryFn: () => fetchMessages(chatId!),
     enabled: !!chatId && !!session?.user,
     refetchInterval: waitingForAi ? 2_000 : false,
+    // タブが非表示でもAI応答を取り逃さない
+    refetchIntervalInBackground: true,
   });
 
   const chatsQuery = useQuery({
@@ -95,6 +97,7 @@ function ChatPage() {
     queryFn: () => fetchAiRunStatus(activeAiRunId!),
     enabled: !!activeAiRunId && waitingForAi,
     refetchInterval: 2_000,
+    refetchIntervalInBackground: true,
   });
   const aiRunStatus: AiRunStatus | null = aiRunQuery.data?.ok ? aiRunQuery.data.value.status : null;
 

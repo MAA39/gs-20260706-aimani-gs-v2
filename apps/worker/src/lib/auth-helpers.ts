@@ -7,7 +7,15 @@ export type AuthBindings = {
   BETTER_AUTH_URL?: string;
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
+  /** ローカル開発専用。OAuth App未設定でE2Eを確認するための偽装ユーザーID。本番には絶対に設定しない */
+  DEV_AUTH_BYPASS_USER_ID?: string;
 };
+
+export function devBypassSession(env: Pick<AuthBindings, 'DEV_AUTH_BYPASS_USER_ID'>): AuthenticatedSession | null {
+  const bypassUserId = env.DEV_AUTH_BYPASS_USER_ID?.trim();
+  if (!bypassUserId) return null;
+  return { ok: true, user: { id: bypassUserId, name: 'Devユーザー', email: null } };
+}
 
 export type AuthenticatedSession = Extract<SessionResult, { ok: true }>;
 
@@ -23,6 +31,9 @@ export async function getSessionForRequest(c: {
   env: AuthBindings;
   req: { raw: Request; url: string };
 }): Promise<SessionResult> {
+  const bypass = devBypassSession(c.env);
+  if (bypass) return bypass;
+
   const baseURL = resolveAuthBaseURL(c.req.raw, new URL(c.req.url).origin, c.env.BETTER_AUTH_URL);
   return getSessionResult(c.env.DB, buildAuthConfig(c.env), baseURL, c.req.raw);
 }
