@@ -1,20 +1,24 @@
 import { createRootRoute, Outlet, HeadContent, Scripts } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 1_000,
-      retry: 1,
-    },
-  },
-});
+import { useState } from 'react';
 
 export const Route = createRootRoute({
   component: RootLayout,
 });
 
 function RootLayout() {
+  // module singletonにするとSSRでリクエスト間にキャッシュが共有される（WEB-01）
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            staleTime: 1_000,
+            retry: 1,
+          },
+        },
+      }),
+  );
   return (
     <html lang="ja">
       <head>

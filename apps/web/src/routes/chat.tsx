@@ -93,6 +93,7 @@ function ChatPage() {
     enabled: !chatId && !!session?.user,
   });
   const pastChats: ChatSummary[] = chatsQuery.data?.ok ? chatsQuery.data.value.chats : [];
+  const chatsFetchFailed = chatsQuery.data !== undefined && !chatsQuery.data.ok;
 
   const aiRunQuery = useQuery({
     queryKey: ['ai-run', activeAiRunId],
@@ -114,12 +115,18 @@ function ChatPage() {
   const messagesResult = messagesQuery.data;
   const messages = messagesResult?.ok ? messagesResult.value.messages : [];
 
+  // どのクエリでもセッション切れを検知したらログインへ誘導する（WEB-03/WEB-08）
+  const chatsResult = chatsQuery.data;
+  const aiRunResult = aiRunQuery.data;
   useEffect(() => {
-    if (!messagesResult || messagesResult.ok) return;
-    if (messagesResult.error._tag === 'HttpError' && messagesResult.error.status === 401) {
+    const results = [messagesResult, chatsResult, aiRunResult];
+    const sessionExpired = results.some(
+      (r) => r !== undefined && !r.ok && r.error._tag === 'HttpError' && r.error.status === 401,
+    );
+    if (sessionExpired) {
       navigate({ to: '/' });
     }
-  }, [messagesResult, navigate]);
+  }, [messagesResult, chatsResult, aiRunResult, navigate]);
 
   useEffect(() => {
     if (!waitingForAi) return;
@@ -165,6 +172,9 @@ function ChatPage() {
     setInput((current) => current || failedMessage);
   };
 
+  // mutation.isPendingの反映は次renderなので、同期的な連打はrefで塞ぐ（WEB-06）
+  const submittingRef = useRef(false);
+
   const startMutation = useMutation({
     mutationFn: (message: string) => startChat(message),
     onSuccess: (result, message) => {
@@ -177,6 +187,11 @@ function ChatPage() {
       setLastHumanSeq(1);
       setActiveAiRunId(result.value.aiRunId);
       setWaitingForAi(true);
+      // 一覧へ戻った時に新規chatをstale表示させない（WEB-07）
+      queryClient.invalidateQueries({ queryKey: ['chats'] });
+    },
+    onSettled: () => {
+      submittingRef.current = false;
     },
   });
 
@@ -193,12 +208,20 @@ function ChatPage() {
       setActiveAiRunId(result.value.aiRunId);
       setWaitingForAi(true);
       queryClient.invalidateQueries({ queryKey: ['messages', chatId] });
+      queryClient.invalidateQueries({ queryKey: ['chats'] });
+    },
+    onSettled: () => {
+      submittingRef.current = false;
     },
   });
 
   const submitMessage = (message: string) => {
     const trimmed = message.trim();
     if (!trimmed) return;
+    if (submittingRef.current || isSending || waitingForAi) return;
+    // 履歴読み込み前に送るとAI応答待ち判定のsequence基準が壊れる（WEB-05）
+    if (chatId && messagesQuery.isPending) return;
+    submittingRef.current = true;
     setInput('');
     setUiError(null);
     setPendingHumanMessage(trimmed);
@@ -258,7 +281,7 @@ function ChatPage() {
         )}
       </header>
 
-      <main style={styles.messages}>
+      <main style={styles.messages} role="log" aria-live="polite" aria-label="壁打ちの会話">
         {!chatId && messages.length === 0 && (
           <div style={styles.empty}>
             <p style={styles.emptyTitle}>何に困っていますか？</p>
@@ -277,6 +300,14 @@ function ChatPage() {
               ))}
             </div>
             <p style={styles.privacyNote}>AIに話した内容は、あなたが出すまで誰にも見えません</p>
+            {chatsFetchFailed && (
+              <div style={styles.errorBanner} role="alert">
+                履歴の取得に失敗しました。
+                <button style={styles.retryButton} onClick={() => chatsQuery.refetch()}>
+                  再読み込み
+                </button>
+              </div>
+            )}
             {pastChats.length > 0 && (
               <div style={styles.historySection}>
                 <p style={styles.historyTitle}>前回の続きから</p>
@@ -325,7 +356,7 @@ function ChatPage() {
         )}
 
         {fetchFailed && (
-          <div style={styles.errorBanner}>
+          <div style={styles.errorBanner} role="alert">
             会話の取得に失敗しました。
             <button style={styles.retryButton} onClick={() => messagesQuery.refetch()}>
               再読み込み
@@ -334,7 +365,7 @@ function ChatPage() {
         )}
 
         {uiError && (
-          <div style={styles.errorBanner}>
+          <div style={styles.errorBanner} role="alert">
             {uiError.text}
             {(uiError.kind === 'timeout' || uiError.kind === 'generic') && (
               <button
@@ -357,13 +388,18 @@ function ChatPage() {
         <textarea
           style={styles.input}
           rows={2}
+          aria-label="相談内容"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="困っていることを書いてください..."
           disabled={isSending}
         />
-        <button style={styles.sendButton} type="submit" disabled={isSending || waitingForAi || !input.trim()}>
+        <button
+          style={styles.sendButton}
+          type="submit"
+          disabled={isSending || waitingForAi || !input.trim() || (chatId !== null && messagesQuery.isPending)}
+        >
           {isSending ? '送信中...' : waitingForAi ? 'AI応答待ち' : '送る'}
         </button>
       </form>
