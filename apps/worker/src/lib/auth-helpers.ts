@@ -40,7 +40,11 @@ export async function getSessionForRequest(c: {
 
 export function authErrorResponse(session: SessionResult) {
   if (session.ok) return null;
-  if (session.reason === 'auth_misconfigured') return { body: { error: 'service not configured' }, status: 503 } as const;
-  if (session.reason === 'auth_failure') return { body: { error: 'authentication service error' }, status: 500 } as const;
-  return { body: { error: 'authentication required' }, status: 401 } as const;
+  if (session.reason === 'auth_misconfigured') {
+    return { body: { code: 'AUTH_NOT_CONFIGURED', message: 'service not configured' }, status: 503 } as const;
+  }
+  if (session.reason === 'auth_failure') {
+    return { body: { code: 'AUTH_FAILURE', message: 'authentication service error' }, status: 500 } as const;
+  }
+  return { body: { code: 'UNAUTHORIZED', message: 'authentication required' }, status: 401 } as const;
 }

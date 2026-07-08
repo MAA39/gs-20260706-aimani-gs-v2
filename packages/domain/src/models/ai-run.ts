@@ -28,7 +28,8 @@ export interface AiRunEvent {
 
 export interface CompleteRunInput {
   readonly aiRunId: AiRunId;
-  readonly resultMessageIds: readonly MessageId[];
+  readonly aiMessageId: MessageId;
+  readonly aiMessageBody: string;
   readonly promptTokens: number;
   readonly completionTokens: number;
   readonly resultHash: string;

@@ -18,8 +18,3 @@ export interface Message {
   readonly createdAt: string;
 }
 
-export interface AppendMessageInput {
-  readonly chatId: ChatId;
-  readonly senderType: SenderType;
-  readonly body: string;
-}

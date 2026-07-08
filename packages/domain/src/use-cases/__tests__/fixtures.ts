@@ -1,6 +1,6 @@
 import type { ChatId, MemberId, MessageId, AiRunId } from '@gs-v2/shared';
 import type { Member } from '../../models/member.js';
-import type { Chat, Message, AppendMessageInput } from '../../models/chat.js';
+import type { Chat, Message } from '../../models/chat.js';
 import type { AiRun, AiRunEvent, CompleteRunInput } from '../../models/ai-run.js';
 import type { MemberRepository, MemberError } from '../../ports/member-repository.js';
 import type { ChatRepository, ChatError } from '../../ports/chat-repository.js';
@@ -118,13 +118,11 @@ export class FakeMemberRepository implements MemberRepository {
 
 export interface FakeChatRepoConfig {
   findById?: Result<Chat, ChatError>;
-  appendMessage?: Result<Message, ChatError>;
   listMessages?: Result<readonly Message[], ChatError>;
 }
 
 export class FakeChatRepository implements ChatRepository {
   readonly calls: string[] = [];
-  readonly appendedMessages: AppendMessageInput[] = [];
 
   constructor(private readonly config: FakeChatRepoConfig = {}) {}
 
@@ -136,15 +134,6 @@ export class FakeChatRepository implements ChatRepository {
   async findByMember(): Promise<Result<readonly Chat[], ChatError>> {
     this.calls.push('findByMember');
     return ok([]);
-  }
-
-  async appendMessage(id: MessageId, input: AppendMessageInput): Promise<Result<Message, ChatError>> {
-    this.calls.push('appendMessage');
-    this.appendedMessages.push(input);
-    return (
-      this.config.appendMessage ??
-      ok(makeMessage({ id, chatId: input.chatId, senderType: input.senderType, body: input.body }))
-    );
   }
 
   async listMessages(id: ChatId): Promise<Result<readonly Message[], ChatError>> {
@@ -171,9 +160,9 @@ export class FakeAiRunRepository implements AiRunRepository {
     return ok(undefined);
   }
 
-  async complete(_input: CompleteRunInput): Promise<Result<void, AiRunError>> {
-    this.calls.push('complete');
-    return ok(undefined);
+  async completeWithAiMessage(input: CompleteRunInput): Promise<Result<Message, AiRunError>> {
+    this.calls.push('completeWithAiMessage');
+    return ok(makeMessage({ id: input.aiMessageId, senderType: 'ai', body: input.aiMessageBody }));
   }
 
   async fail(): Promise<Result<void, AiRunError>> {

@@ -15,9 +15,8 @@ interface HttpFailure {
 
 function aiRunErrorToHttp(error: GetAiRunStatusError): HttpFailure {
   switch (error._tag) {
+    // 不存在と他人のrunでbodyを揃える（存在確認oracle対策、chat側と同方針。R3-07）
     case 'AiRunNotFound':
-      return { status: 404, body: { code: 'AI_RUN_NOT_FOUND', message: `AI run ${error.aiRunId} not found` } };
-    // 他人のrunは「存在しない」扱い（存在確認oracle対策、chat側と同方針）
     case 'ChatNotOwned':
     case 'ChatNotFound':
       return { status: 404, body: { code: 'AI_RUN_NOT_FOUND', message: 'AI run not found' } };
@@ -25,8 +24,6 @@ function aiRunErrorToHttp(error: GetAiRunStatusError): HttpFailure {
       return { status: 409, body: { code: 'CHAT_ARCHIVED', message: `Chat ${error.chatId} is archived` } };
     case 'AiRunConflict':
       return { status: 409, body: { code: 'AI_RUN_CONFLICT', message: `AI run conflict: ${error.reason}` } };
-    case 'MessageSequenceConflict':
-      return { status: 409, body: { code: 'MESSAGE_CONFLICT', message: 'Concurrent write detected' } };
     case 'InvalidAiRunTransition':
     case 'ChatDbFailure':
     case 'AiRunDbFailure':

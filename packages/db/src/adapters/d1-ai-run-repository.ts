@@ -1,5 +1,5 @@
-import type { AiRunId } from '@gs-v2/shared';
-import type { AiRun, AiRunEvent, CompleteRunInput } from '@gs-v2/domain';
+import type { AiRunId, ChatId } from '@gs-v2/shared';
+import type { AiRun, AiRunEvent, CompleteRunInput, Message } from '@gs-v2/domain';
 import type { AiRunRepository, AiRunError } from '@gs-v2/domain';
 import type { Result } from '@gs-v2/domain';
 import { ok, err } from '@gs-v2/domain';
@@ -60,117 +60,135 @@ function rowToEvent(row: AiRunEventRow): AiRunEvent {
   };
 }
 
-function isUniqueConstraintFailure(cause: unknown, constraint: string): boolean {
+function isSequenceConflict(cause: unknown): boolean {
   return (
     cause instanceof Error &&
     cause.message.includes('UNIQUE constraint failed') &&
-    cause.message.includes(constraint)
+    (cause.message.includes('ai_run_events.sequence') || cause.message.includes('messages.sequence'))
   );
 }
 
-const APPEND_EVENT_MAX_ATTEMPTS = 3;
+const TRANSITION_MAX_ATTEMPTS = 3;
 
 export class D1AiRunRepository implements AiRunRepository {
   constructor(private readonly db: D1Database) {}
 
   async markAdmitted(id: AiRunId): Promise<Result<void, AiRunError>> {
-    return this.casTransition(id, 'queued', 'admitted');
+    return this.transitionWithEvent(id, {
+      fromStatuses: ['queued'],
+      toStatus: 'admitted',
+      eventData: {},
+    });
   }
 
   async markGenerating(id: AiRunId, flueRunId: string): Promise<Result<void, AiRunError>> {
-    const now = new Date().toISOString();
-    let changes: number;
-    try {
-      const result = await this.db
-        .prepare(`UPDATE ai_runs SET status = 'generating', flue_run_id = ?, updated_at = ? WHERE id = ? AND status = 'admitted'`)
-        .bind(flueRunId, now, id)
-        .run();
-      changes = result.meta.changes;
-    } catch {
-      return err({ _tag: 'AiRunDbFailure', operation: 'markGenerating' });
-    }
-
-    if (!changes) {
-      return err({ _tag: 'InvalidAiRunTransition', aiRunId: id, from: 'admitted', to: 'generating' });
-    }
-
-    await this.appendEvent(id, 'generating', { flueRunId });
-    return ok(undefined);
+    return this.transitionWithEvent(id, {
+      fromStatuses: ['admitted'],
+      toStatus: 'generating',
+      extraSetSql: 'flue_run_id = ?',
+      extraSetBindings: [flueRunId],
+      eventData: { flueRunId },
+    });
   }
 
   async markRepairing(id: AiRunId): Promise<Result<void, AiRunError>> {
-    const now = new Date().toISOString();
-    let changes: number;
-    try {
-      const result = await this.db
-        .prepare(`UPDATE ai_runs SET status = 'repairing', attempt_count = attempt_count + 1, updated_at = ? WHERE id = ? AND status = 'generating'`)
-        .bind(now, id)
-        .run();
-      changes = result.meta.changes;
-    } catch {
-      return err({ _tag: 'AiRunDbFailure', operation: 'markRepairing' });
-    }
-
-    if (!changes) {
-      return err({ _tag: 'InvalidAiRunTransition', aiRunId: id, from: 'generating', to: 'repairing' });
-    }
-
-    await this.appendEvent(id, 'repairing', {});
-    return ok(undefined);
-  }
-
-  async complete(input: CompleteRunInput): Promise<Result<void, AiRunError>> {
-    const now = new Date().toISOString();
-    let changes: number;
-    try {
-      const result = await this.db
-        .prepare(`
-          UPDATE ai_runs
-          SET status = 'completed', prompt_tokens = ?, completion_tokens = ?, result_hash = ?, updated_at = ?
-          WHERE id = ? AND status IN ('generating', 'repairing')
-        `)
-        .bind(input.promptTokens, input.completionTokens, input.resultHash, now, input.aiRunId)
-        .run();
-      changes = result.meta.changes;
-    } catch {
-      return err({ _tag: 'AiRunDbFailure', operation: 'complete' });
-    }
-
-    if (!changes) {
-      return err({ _tag: 'InvalidAiRunTransition', aiRunId: input.aiRunId, from: '?', to: 'completed' });
-    }
-
-    await this.appendEvent(input.aiRunId, 'completed', {
-      resultMessageIds: input.resultMessageIds,
-      promptTokens: input.promptTokens,
-      completionTokens: input.completionTokens,
+    return this.transitionWithEvent(id, {
+      fromStatuses: ['generating'],
+      toStatus: 'repairing',
+      extraSetSql: 'attempt_count = attempt_count + 1',
+      extraSetBindings: [],
+      eventData: {},
     });
-    return ok(undefined);
   }
 
-  async fail(id: AiRunId, errorMessage: string): Promise<Result<void, AiRunError>> {
-    const now = new Date().toISOString();
+  // AI応答messageの追加とcompleted遷移を同一トランザクションにする。
+  // 片方だけ成立すると「返信は見えるのにrunがin-flightのまま」でchatが停止する（R3-03）
+  async completeWithAiMessage(input: CompleteRunInput): Promise<Result<Message, AiRunError>> {
+    for (let attempt = 1; attempt <= TRANSITION_MAX_ATTEMPTS; attempt++) {
+      const now = new Date().toISOString();
+      const eventId = crypto.randomUUID();
+      try {
+        const [messageInsert, statusUpdate] = await this.db.batch([
+          this.db
+            .prepare(
+              `INSERT INTO messages (id, chat_id, sender_type, body, sequence, created_at)
+               SELECT ?1, r.chat_id, 'ai', ?3, COALESCE((SELECT MAX(m.sequence) FROM messages m WHERE m.chat_id = r.chat_id), 0) + 1, ?4
+               FROM ai_runs r WHERE r.id = ?2 AND r.status IN ('generating', 'repairing')
+               RETURNING chat_id, sequence`,
+            )
+            .bind(input.aiMessageId, input.aiRunId, input.aiMessageBody, now),
+          this.db
+            .prepare(
+              `UPDATE ai_runs
+               SET status = 'completed', prompt_tokens = ?, completion_tokens = ?, result_hash = ?, updated_at = ?
+               WHERE id = ? AND status IN ('generating', 'repairing')`,
+            )
+            .bind(input.promptTokens, input.completionTokens, input.resultHash, now, input.aiRunId),
+          this.eventInsertStatement(eventId, input.aiRunId, 'completed', now, {
+            resultMessageIds: [input.aiMessageId],
+            promptTokens: input.promptTokens,
+            completionTokens: input.completionTokens,
+          }),
+        ]);
+
+        if (!statusUpdate.meta.changes) {
+          return err({ _tag: 'InvalidAiRunTransition', aiRunId: input.aiRunId, from: '?', to: 'completed' });
+        }
+        const insertedRow = messageInsert.results.at(0) as { chat_id: string; sequence: number } | undefined;
+        if (!insertedRow) {
+          return err({ _tag: 'AiRunDbFailure', operation: 'completeWithAiMessage:message-missing' });
+        }
+        return ok({
+          id: input.aiMessageId,
+          chatId: insertedRow.chat_id as ChatId,
+          senderType: 'ai',
+          body: input.aiMessageBody,
+          sequence: insertedRow.sequence,
+          createdAt: now,
+        });
+      } catch (cause) {
+        if (isSequenceConflict(cause) && attempt < TRANSITION_MAX_ATTEMPTS) continue;
+        return err({ _tag: 'AiRunDbFailure', operation: 'completeWithAiMessage' });
+      }
+    }
+    return err({ _tag: 'AiRunDbFailure', operation: 'completeWithAiMessage' });
+  }
+
+  // 失敗の事実（run状態・event・ユーザー向けsystemメッセージ）を同一トランザクションで残す
+  async fail(id: AiRunId, errorMessage: string, userNotice: string): Promise<Result<void, AiRunError>> {
     const truncated = errorMessage.slice(0, 500);
-    let changes: number;
-    try {
-      const result = await this.db
-        .prepare(`
-          UPDATE ai_runs SET status = 'failed', error_message = ?, updated_at = ?
-          WHERE id = ? AND status NOT IN ('completed', 'failed')
-        `)
-        .bind(truncated, now, id)
-        .run();
-      changes = result.meta.changes;
-    } catch {
-      return err({ _tag: 'AiRunDbFailure', operation: 'fail' });
-    }
+    for (let attempt = 1; attempt <= TRANSITION_MAX_ATTEMPTS; attempt++) {
+      const now = new Date().toISOString();
+      const eventId = crypto.randomUUID();
+      const noticeMessageId = crypto.randomUUID();
+      try {
+        const [, statusUpdate] = await this.db.batch([
+          this.db
+            .prepare(
+              `INSERT INTO messages (id, chat_id, sender_type, body, sequence, created_at)
+               SELECT ?1, r.chat_id, 'system', ?3, COALESCE((SELECT MAX(m.sequence) FROM messages m WHERE m.chat_id = r.chat_id), 0) + 1, ?4
+               FROM ai_runs r WHERE r.id = ?2 AND r.status NOT IN ('completed', 'failed')`,
+            )
+            .bind(noticeMessageId, id, userNotice, now),
+          this.db
+            .prepare(
+              `UPDATE ai_runs SET status = 'failed', error_message = ?, updated_at = ?
+               WHERE id = ? AND status NOT IN ('completed', 'failed')`,
+            )
+            .bind(truncated, now, id),
+          this.eventInsertStatement(eventId, id, 'failed', now, { errorMessage: truncated }),
+        ]);
 
-    if (!changes) {
-      return err({ _tag: 'InvalidAiRunTransition', aiRunId: id, from: '?', to: 'failed' });
+        if (!statusUpdate.meta.changes) {
+          return err({ _tag: 'InvalidAiRunTransition', aiRunId: id, from: '?', to: 'failed' });
+        }
+        return ok(undefined);
+      } catch (cause) {
+        if (isSequenceConflict(cause) && attempt < TRANSITION_MAX_ATTEMPTS) continue;
+        return err({ _tag: 'AiRunDbFailure', operation: 'fail' });
+      }
     }
-
-    await this.appendEvent(id, 'failed', { errorMessage: truncated });
-    return ok(undefined);
+    return err({ _tag: 'AiRunDbFailure', operation: 'fail' });
   }
 
   async findById(id: AiRunId): Promise<Result<AiRun, AiRunError>> {
@@ -198,46 +216,60 @@ export class D1AiRunRepository implements AiRunRepository {
     }
   }
 
-  private async casTransition(id: AiRunId, from: string, to: string): Promise<Result<void, AiRunError>> {
-    const now = new Date().toISOString();
-    let changes: number;
-    try {
-      const result = await this.db
-        .prepare(`UPDATE ai_runs SET status = ?, updated_at = ? WHERE id = ? AND status = ?`)
-        .bind(to, now, id, from)
-        .run();
-      changes = result.meta.changes;
-    } catch {
-      return err({ _tag: 'AiRunDbFailure', operation: `casTransition:${from}->${to}` });
-    }
-
-    if (!changes) {
-      return err({ _tag: 'InvalidAiRunTransition', aiRunId: id, from, to });
-    }
-
-    await this.appendEvent(id, to, {});
-    return ok(undefined);
+  // 遷移が同一batch内で適用済み（status=to かつ updated_at=now）の時だけeventを追記する
+  private eventInsertStatement(
+    eventId: string,
+    aiRunId: AiRunId,
+    eventType: string,
+    now: string,
+    eventData: Record<string, unknown>,
+  ) {
+    return this.db
+      .prepare(
+        `INSERT INTO ai_run_events (id, ai_run_id, event_type, sequence, data_json, created_at)
+         SELECT ?1, r.id, ?3, COALESCE((SELECT MAX(e.sequence) FROM ai_run_events e WHERE e.ai_run_id = r.id), 0) + 1, ?4, ?5
+         FROM ai_runs r WHERE r.id = ?2 AND r.status = ?3 AND r.updated_at = ?5`,
+      )
+      .bind(eventId, aiRunId, eventType, JSON.stringify(eventData), now);
   }
 
-  // イベント追記はライフサイクル進行のベストエフォート副産物。失敗しても状態遷移自体は成立している
-  private async appendEvent(aiRunId: AiRunId, eventType: string, data: Record<string, unknown>): Promise<void> {
-    for (let attempt = 1; attempt <= APPEND_EVENT_MAX_ATTEMPTS; attempt++) {
-      const eventId = crypto.randomUUID();
+  private async transitionWithEvent(
+    id: AiRunId,
+    transition: {
+      fromStatuses: readonly string[];
+      toStatus: string;
+      extraSetSql?: string;
+      extraSetBindings?: readonly (string | number)[];
+      eventData: Record<string, unknown>;
+    },
+  ): Promise<Result<void, AiRunError>> {
+    const fromList = transition.fromStatuses.map((s) => `'${s}'`).join(', ');
+    const extraSet = transition.extraSetSql ? `, ${transition.extraSetSql}` : '';
+    for (let attempt = 1; attempt <= TRANSITION_MAX_ATTEMPTS; attempt++) {
       const now = new Date().toISOString();
+      const eventId = crypto.randomUUID();
       try {
-        await this.db
-          .prepare(
-            `INSERT INTO ai_run_events (id, ai_run_id, event_type, sequence, data_json, created_at)
-             SELECT ?1, ?2, ?3, COALESCE(MAX(sequence), 0) + 1, ?4, ?5 FROM ai_run_events WHERE ai_run_id = ?2`,
-          )
-          .bind(eventId, aiRunId, eventType, JSON.stringify(data), now)
-          .run();
-        return;
+        const [statusUpdate] = await this.db.batch([
+          this.db
+            .prepare(`UPDATE ai_runs SET status = ?, updated_at = ?${extraSet} WHERE id = ? AND status IN (${fromList})`)
+            .bind(transition.toStatus, now, ...(transition.extraSetBindings ?? []), id),
+          this.eventInsertStatement(eventId, id, transition.toStatus, now, transition.eventData),
+        ]);
+
+        if (!statusUpdate.meta.changes) {
+          return err({
+            _tag: 'InvalidAiRunTransition',
+            aiRunId: id,
+            from: transition.fromStatuses.join('|'),
+            to: transition.toStatus,
+          });
+        }
+        return ok(undefined);
       } catch (cause) {
-        if (isUniqueConstraintFailure(cause, 'ai_run_events.sequence') && attempt < APPEND_EVENT_MAX_ATTEMPTS) continue;
-        console.error('appendEvent failed', { aiRunId, eventType, attempt });
-        return;
+        if (isSequenceConflict(cause) && attempt < TRANSITION_MAX_ATTEMPTS) continue;
+        return err({ _tag: 'AiRunDbFailure', operation: `transition:${transition.toStatus}` });
       }
     }
+    return err({ _tag: 'AiRunDbFailure', operation: `transition:${transition.toStatus}` });
   }
 }

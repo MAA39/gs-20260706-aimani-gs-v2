@@ -11,5 +11,5 @@ export const BODY_LIMITS = {
 export const jsonBodyLimit = (maxSize: number) =>
   bodyLimit({
     maxSize,
-    onError: (c) => c.json({ error: 'payload too large' }, 413),
+    onError: (c) => c.json({ code: 'PAYLOAD_TOO_LARGE', message: 'payload too large' }, 413),
   });

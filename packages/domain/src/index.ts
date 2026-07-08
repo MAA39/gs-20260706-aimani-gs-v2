@@ -2,7 +2,7 @@ export { ok, err } from './result.js';
 export type { Result } from './result.js';
 
 export type { Member, CreateMemberInput } from './models/member.js';
-export type { Chat, Message, AppendMessageInput } from './models/chat.js';
+export type { Chat, Message } from './models/chat.js';
 export type { AiRun, AiRunEvent, CompleteRunInput } from './models/ai-run.js';
 
 export type { MemberRepository, MemberError } from './ports/member-repository.js';

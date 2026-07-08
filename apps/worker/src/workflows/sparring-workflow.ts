@@ -45,13 +45,7 @@ export async function run({ payload, env, init }: FlueContext<unknown, Env>) {
   // failで潰した事実をユーザーにも見せる（TSU-005: 終端状態の可視化）
   async function failVisibly(reason: string): Promise<void> {
     if (!input) return;
-    const failResult = await aiRunRepo.fail(input.aiRunId, reason);
-    if (!failResult.ok) return;
-    await chatRepo.appendMessage(crypto.randomUUID() as MessageId, {
-      chatId: input.chatId,
-      senderType: 'system',
-      body: 'AI応答の生成に失敗しました。もう一度送信してください。',
-    });
+    await aiRunRepo.fail(input.aiRunId, reason, 'AI応答の生成に失敗しました。もう一度送信してください。');
   }
 
   try {
@@ -124,31 +118,24 @@ export async function run({ payload, env, init }: FlueContext<unknown, Env>) {
     }
 
     const aiMessageBody = response.text;
-    const aiMessageId = crypto.randomUUID() as MessageId;
-    const appendResult = await chatRepo.appendMessage(aiMessageId, {
-      chatId: input.chatId,
-      senderType: 'ai',
-      body: aiMessageBody,
-    });
-    if (!appendResult.ok) {
-      await failVisibly(appendResult.error._tag);
-      return;
-    }
 
     const textEncoder = new TextEncoder();
     const hashBuffer = await crypto.subtle.digest('SHA-256', textEncoder.encode(aiMessageBody));
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const resultHash = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 
-    const completeResult = await aiRunRepo.complete({
+    // AI message追加とcompleted遷移は同一トランザクション（R3-03: 片方だけ成立するとchatが停止する）
+    const completeResult = await aiRunRepo.completeWithAiMessage({
       aiRunId: input.aiRunId,
-      resultMessageIds: [aiMessageId],
+      aiMessageId: crypto.randomUUID() as MessageId,
+      aiMessageBody,
       promptTokens: response.usage?.input ?? 0,
       completionTokens: response.usage?.output ?? 0,
       resultHash,
     });
     if (!completeResult.ok) {
-      console.error('sparring-workflow: complete transition failed', { aiRunId: input.aiRunId, error: completeResult.error._tag });
+      await failVisibly(`complete failed: ${completeResult.error._tag}`);
+      return;
     }
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Unknown workflow error';

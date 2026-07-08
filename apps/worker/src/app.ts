@@ -111,7 +111,12 @@ app.use('*', async (c, next) => {
 
   const hostname = new URL(c.req.url).hostname;
   const hasValidHostname = INTERNAL_HOSTNAME_ALLOWLIST.includes(hostname);
-  const hasValidToken = c.req.header('x-internal-token') === c.env.INTERNAL_ROUTE_SECRET;
+  // secret未設定時はfail-closed: undefined === undefined で外部から通れてしまうのを防ぐ（R3-04）
+  const internalRouteSecret = c.env.INTERNAL_ROUTE_SECRET;
+  const hasValidToken =
+    typeof internalRouteSecret === 'string' &&
+    internalRouteSecret.trim().length > 0 &&
+    c.req.header('x-internal-token') === internalRouteSecret;
   if (!hasValidHostname && !hasValidToken) {
     return c.notFound();
   }

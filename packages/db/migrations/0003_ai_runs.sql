@@ -1,6 +1,6 @@
 -- ai_runs: AI実行ライフサイクル（CAS風状態遷移）
 CREATE TABLE ai_runs (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL PRIMARY KEY,
   chat_id TEXT NOT NULL REFERENCES chats(id),
   trigger_message_id TEXT NOT NULL,
   stage TEXT NOT NULL CHECK(stage IN ('sparring','recommendation')),
@@ -18,7 +18,7 @@ CREATE TABLE ai_runs (
   FOREIGN KEY (chat_id, trigger_message_id) REFERENCES messages(chat_id, id),
   -- 同一messageから同一stageのrunは1つまで（再送・payload改ざんの二重run防止）
   UNIQUE(trigger_message_id, stage)
-);
+) WITHOUT ROWID;
 
 CREATE INDEX idx_ai_runs_chat ON ai_runs(chat_id);
 CREATE INDEX idx_ai_runs_status ON ai_runs(status);
@@ -29,13 +29,12 @@ CREATE UNIQUE INDEX uq_ai_runs_active_per_chat ON ai_runs(chat_id)
 
 -- ai_run_events: SSE向けイベントストリーム
 CREATE TABLE ai_run_events (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL PRIMARY KEY,
   ai_run_id TEXT NOT NULL REFERENCES ai_runs(id),
   event_type TEXT NOT NULL,
-  sequence INTEGER NOT NULL,
+  sequence INTEGER NOT NULL CHECK(sequence >= 1),
   data_json TEXT NOT NULL CHECK(json_valid(data_json)),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  -- UNIQUE(ai_run_id, sequence)がai_run_id先頭indexを兼ねるため、単独indexは持たない
   UNIQUE(ai_run_id, sequence)
-);
-
-CREATE INDEX idx_ai_run_events_run ON ai_run_events(ai_run_id);
+) WITHOUT ROWID;

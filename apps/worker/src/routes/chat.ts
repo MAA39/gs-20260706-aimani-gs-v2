@@ -76,15 +76,9 @@ interface WorkflowDispatchPayload {
 }
 
 // dispatch失敗でqueued固着させない: runをfailedにし、systemメッセージで可視化する（ADV-008）
+// fail不可 = 別経路でrunが進行中。触らない
 async function markDispatchFailed(deps: ReturnType<typeof buildDeps>, payload: WorkflowDispatchPayload): Promise<void> {
-  const failResult = await deps.aiRunRepo.fail(payload.aiRunId, 'workflow dispatch failed');
-  // fail不可 = 別経路でrunが進行中。触らない
-  if (!failResult.ok) return;
-  await deps.chatRepo.appendMessage(crypto.randomUUID() as MessageId, {
-    chatId: payload.chatId,
-    senderType: 'system',
-    body: 'AI応答の起動に失敗しました。もう一度送信してください。',
-  });
+  await deps.aiRunRepo.fail(payload.aiRunId, 'workflow dispatch failed', 'AI応答の起動に失敗しました。もう一度送信してください。');
 }
 
 function triggerWorkflow(appFetch: AppVars['appFetch'], env: Env, executionCtx: { waitUntil: (p: Promise<unknown>) => void; passThroughOnException: () => void }, deps: ReturnType<typeof buildDeps>, payload: WorkflowDispatchPayload) {

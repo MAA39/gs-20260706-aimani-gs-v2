@@ -1,12 +1,11 @@
 import { Hono } from 'hono';
 import type { Env } from '../app.js';
-import type { MemberId } from '@gs-v2/shared';
 import { parseMemberId } from '@gs-v2/shared';
 
 import { parseCreateMemberRequest } from '@gs-v2/contracts';
 import type { MemberError } from '@gs-v2/domain';
 import { D1MemberRepository } from '@gs-v2/db';
-import { getSessionForRequest } from '../lib/auth-helpers.js';
+import { getSessionForRequest, authErrorResponse } from '../lib/auth-helpers.js';
 
 export const memberRoutes = new Hono<{ Bindings: Env }>();
 
@@ -29,6 +28,17 @@ function memberErrorToHttp(error: MemberError): HttpFailure {
 }
 
 memberRoutes.post('/', async (c) => {
+  // member作成も他routeと同じ認証境界（R3-05: 匿名フォールバックは未認証の大量作成を許す）
+  const session = await getSessionForRequest(c);
+  if (!session.ok) {
+    const error = authErrorResponse(session);
+    return c.json(error!.body, error!.status);
+  }
+  const sessionMemberId = parseMemberId(session.user.id);
+  if (!sessionMemberId.ok) {
+    return c.json({ code: 'INTERNAL_ERROR', message: 'invalid session user id' }, 500);
+  }
+
   let rawBody: unknown;
   try {
     rawBody = await c.req.json();
@@ -42,11 +52,7 @@ memberRoutes.post('/', async (c) => {
   }
 
   const repo = new D1MemberRepository(c.env.DB);
-  const session = await getSessionForRequest(c);
-  // session idはparseを通し、不正形式なら匿名IDへフォールバック
-  const sessionId = session.ok ? parseMemberId(session.user.id) : null;
-  const memberId = sessionId?.ok ? sessionId.value : (crypto.randomUUID() as MemberId);
-  const result = await repo.create(memberId, {
+  const result = await repo.create(sessionMemberId.value, {
     displayName: parsed.value.displayName,
     role: 'student',
     bio: parsed.value.bio,
