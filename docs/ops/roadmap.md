@@ -18,7 +18,7 @@ Phase 0 ✅ ──── Phase 1 ✅(95%) ──── Phase 2 ⬅今ここか�
 
 **残り**:
 - GitHub OAuth App作成（★人間・5分）→ secrets投入 → devバイパス削除
-- message+aiRun作成の原子性（Port設計の裁定要）
+- ~~message+aiRun作成の原子性~~ ✅ 7/9夜 TurnRepository+D1 batchで解決
 - Idempotency-Key（二重送信の完全排除）
 - rate_limits: flue buildがwrangler設定から落とす問題の恒久対応（暫定: コードは欠落耐性済み）
 
@@ -55,9 +55,10 @@ codex-15の指摘どおり「壁打ちして終わり」では価値の芯がな
 
 ## セキュリティ留保（マージ前に裁定）
 
-- ADV-010/MIH-004のmigration再構築 — **本番D1にmigration適用する前が最後の楽なタイミング**
+- ~~ADV-010のmigration再構築~~ ✅ 7/9夜 複合FK+部分UNIQUE index適用済み（本番未適用のうちに書き直し完了）
+- MIH-004残り: ai_runsのstate依存nullableのUnion化（SCH-03設計案あり、朝判断）
 - 本番のDEV_AUTH_BYPASS_USER_IDはOAuth App設定後に必ず削除
-- in-flight 409のDB invariant化（部分UNIQUE index）
+- ~~in-flight 409のDB invariant化（部分UNIQUE index）~~ ✅ 7/9夜 uq_ai_runs_active_per_chat
 
 ## 人間にしかできないこと（優先順）
 
