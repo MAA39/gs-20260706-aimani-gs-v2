@@ -3,7 +3,7 @@ import type { ChatId, MemberId, MessageId, SenderType, ChatStatus } from '@gs-v2
 export interface Chat {
   readonly id: ChatId;
   readonly memberId: MemberId;
-  readonly title: string | null;
+  readonly title: string;
   readonly status: ChatStatus;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -16,11 +16,6 @@ export interface Message {
   readonly body: string;
   readonly sequence: number;
   readonly createdAt: string;
-}
-
-export interface CreateChatInput {
-  readonly memberId: MemberId;
-  readonly title?: string;
 }
 
 export interface AppendMessageInput {

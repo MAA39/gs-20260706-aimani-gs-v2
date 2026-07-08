@@ -2,12 +2,21 @@ export { ok, err } from './result.js';
 export type { Result } from './result.js';
 
 export type { Member, CreateMemberInput } from './models/member.js';
-export type { Chat, Message, CreateChatInput, AppendMessageInput } from './models/chat.js';
-export type { AiRun, AiRunEvent, CreateQueuedRunInput, CompleteRunInput } from './models/ai-run.js';
+export type { Chat, Message, AppendMessageInput } from './models/chat.js';
+export type { AiRun, AiRunEvent, CompleteRunInput } from './models/ai-run.js';
 
 export type { MemberRepository, MemberError } from './ports/member-repository.js';
 export type { ChatRepository, ChatError } from './ports/chat-repository.js';
 export type { AiRunRepository, AiRunError } from './ports/ai-run-repository.js';
+export type {
+  TurnRepository,
+  TurnError,
+  TurnIds,
+  HumanTurn,
+  ChatWithFirstTurn,
+  AppendHumanTurnInput,
+  CreateChatWithFirstTurnInput,
+} from './ports/turn-repository.js';
 
 export { startChat } from './use-cases/start-chat.js';
 export type { StartChatDeps, StartChatOutput, StartChatError } from './use-cases/start-chat.js';

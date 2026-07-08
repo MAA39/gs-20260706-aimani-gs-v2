@@ -26,13 +26,6 @@ export interface AiRunEvent {
   readonly createdAt: string;
 }
 
-export interface CreateQueuedRunInput {
-  readonly chatId: ChatId;
-  readonly triggerMessageId: MessageId;
-  readonly stage: AiRunStage;
-  readonly idempotencyKey?: string;
-}
-
 export interface CompleteRunInput {
   readonly aiRunId: AiRunId;
   readonly resultMessageIds: readonly MessageId[];

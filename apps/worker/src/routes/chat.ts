@@ -6,7 +6,7 @@ import { parseStartChatRequest, parseSendMessageRequest } from '@gs-v2/contracts
 import { startChat, sendMessage, listChatMessages, listMemberChats } from '@gs-v2/domain';
 import type { StartChatError, SendMessageError, ListChatMessagesError, MemberError, Result } from '@gs-v2/domain';
 import { ok, err } from '@gs-v2/domain';
-import { D1ChatRepository, D1MemberRepository, D1AiRunRepository } from '@gs-v2/db';
+import { D1ChatRepository, D1MemberRepository, D1AiRunRepository, D1TurnRepository } from '@gs-v2/db';
 import { getSessionForRequest, authErrorResponse } from '../lib/auth-helpers.js';
 import type { AuthenticatedSession } from '../lib/auth-helpers.js';
 
@@ -38,11 +38,9 @@ function domainErrorToHttp(error: DomainError): HttpFailure {
       return { status: 409, body: { code: 'AI_RUN_IN_FLIGHT', message: 'AI response is still in progress. Please wait for it.' } };
     case 'AiRunConflict':
       return { status: 409, body: { code: 'AI_RUN_CONFLICT', message: `AI run conflict: ${error.reason}` } };
-    case 'AiRunNotFound':
-    case 'InvalidAiRunTransition':
     case 'MemberDbFailure':
     case 'ChatDbFailure':
-    case 'AiRunDbFailure':
+    case 'TurnDbFailure':
       return { status: 500, body: { code: 'INTERNAL_ERROR', message: error._tag } };
     default:
       return error satisfies never;
@@ -124,6 +122,7 @@ function buildDeps(db: D1Database) {
     memberRepo: new D1MemberRepository(db),
     chatRepo: new D1ChatRepository(db),
     aiRunRepo: new D1AiRunRepository(db),
+    turnRepo: new D1TurnRepository(db),
     idGen: () => crypto.randomUUID(),
   };
 }

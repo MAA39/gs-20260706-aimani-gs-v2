@@ -2,9 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { sendMessage } from '../send-message.js';
 import {
   FakeChatRepository,
-  FakeAiRunRepository,
+  FakeTurnRepository,
   makeChat,
-  makeAiRun,
   memberId,
   chatId,
   sequentialIdGen,
@@ -12,8 +11,8 @@ import {
   err,
 } from './fixtures.js';
 
-function makeDeps(chatRepo: FakeChatRepository, aiRunRepo: FakeAiRunRepository) {
-  return { chatRepo, aiRunRepo, idGen: sequentialIdGen() };
+function makeDeps(chatRepo: FakeChatRepository, turnRepo = new FakeTurnRepository()) {
+  return { chatRepo, turnRepo, idGen: sequentialIdGen() };
 }
 
 describe('sendMessage', () => {
@@ -22,88 +21,87 @@ describe('sendMessage', () => {
     const chatRepo = new FakeChatRepository({
       findById: ok(makeChat({ memberId: memberId('owner') })),
     });
-    const aiRunRepo = new FakeAiRunRepository();
+    const turnRepo = new FakeTurnRepository();
 
-    const result = await sendMessage(makeDeps(chatRepo, aiRunRepo), memberId('attacker'), chatId('chat-1'), 'こんにちは');
+    const result = await sendMessage(makeDeps(chatRepo, turnRepo), memberId('attacker'), chatId('chat-1'), 'こんにちは');
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error._tag).toBe('ChatNotOwned');
-    expect(chatRepo.calls).not.toContain('appendMessage');
-    expect(aiRunRepo.calls).not.toContain('createQueued');
+    expect(turnRepo.calls).toHaveLength(0);
   });
 
   it('archivedチャットへの送信はChatArchivedを返し、メッセージを追加しない', async () => {
     const chatRepo = new FakeChatRepository({
       findById: ok(makeChat({ memberId: memberId('member-1'), status: 'archived' })),
     });
-    const aiRunRepo = new FakeAiRunRepository();
+    const turnRepo = new FakeTurnRepository();
 
-    const result = await sendMessage(makeDeps(chatRepo, aiRunRepo), memberId('member-1'), chatId('chat-1'), 'こんにちは');
+    const result = await sendMessage(makeDeps(chatRepo, turnRepo), memberId('member-1'), chatId('chat-1'), 'こんにちは');
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error._tag).toBe('ChatArchived');
-    expect(chatRepo.calls).not.toContain('appendMessage');
+    expect(turnRepo.calls).toHaveLength(0);
   });
 
-  // D-001 (TSU-004)
-  it('AI応答の生成中に追加送信するとAiRunInFlightを返し、メッセージを追加しない', async () => {
+  // D-001 (TSU-004): in-flight検知はDBの部分UNIQUE index違反としてTurnRepositoryから返る
+  it('AI応答の生成中に追加送信するとAiRunInFlightを返す', async () => {
     const chatRepo = new FakeChatRepository({
       findById: ok(makeChat({ memberId: memberId('member-1') })),
     });
-    const aiRunRepo = new FakeAiRunRepository({
-      findActiveByChatId: ok(makeAiRun({ status: 'generating' })),
+    const turnRepo = new FakeTurnRepository({
+      appendHumanTurn: err({ _tag: 'AiRunInFlight', chatId: 'chat-1', aiRunId: 'ai-run-busy' }),
     });
 
-    const result = await sendMessage(makeDeps(chatRepo, aiRunRepo), memberId('member-1'), chatId('chat-1'), '追加で聞きたい');
+    const result = await sendMessage(makeDeps(chatRepo, turnRepo), memberId('member-1'), chatId('chat-1'), '追加で聞きたい');
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error._tag).toBe('AiRunInFlight');
-    expect(chatRepo.calls).not.toContain('appendMessage');
-    expect(aiRunRepo.calls).not.toContain('createQueued');
   });
 
   it('存在しないチャットへの送信はChatNotFoundをそのまま返す', async () => {
     const chatRepo = new FakeChatRepository({
       findById: err({ _tag: 'ChatNotFound', chatId: 'chat-x' }),
     });
-    const aiRunRepo = new FakeAiRunRepository();
+    const turnRepo = new FakeTurnRepository();
 
-    const result = await sendMessage(makeDeps(chatRepo, aiRunRepo), memberId('member-1'), chatId('chat-x'), 'こんにちは');
+    const result = await sendMessage(makeDeps(chatRepo, turnRepo), memberId('member-1'), chatId('chat-x'), 'こんにちは');
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error._tag).toBe('ChatNotFound');
+    expect(turnRepo.calls).toHaveLength(0);
   });
 
   // A-005系のdomain契約: adapterのResultは伝搬しthrowしない
-  it('メッセージ追加がMessageSequenceConflictで失敗したらAI runを作成せずエラーを返す', async () => {
+  it('ターン追加がMessageSequenceConflictで失敗したらそのままエラーを返す', async () => {
     const chatRepo = new FakeChatRepository({
       findById: ok(makeChat({ memberId: memberId('member-1') })),
-      appendMessage: err({ _tag: 'MessageSequenceConflict', chatId: 'chat-1' }),
     });
-    const aiRunRepo = new FakeAiRunRepository();
+    const turnRepo = new FakeTurnRepository({
+      appendHumanTurn: err({ _tag: 'MessageSequenceConflict', chatId: 'chat-1' }),
+    });
 
-    const result = await sendMessage(makeDeps(chatRepo, aiRunRepo), memberId('member-1'), chatId('chat-1'), 'こんにちは');
+    const result = await sendMessage(makeDeps(chatRepo, turnRepo), memberId('member-1'), chatId('chat-1'), 'こんにちは');
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error._tag).toBe('MessageSequenceConflict');
-    expect(aiRunRepo.calls).not.toContain('createQueued');
   });
 
-  it('所有者本人の送信はhumanメッセージを追加し、そのメッセージをtriggerとするsparring AI runを作成する', async () => {
+  // ADV-007: humanメッセージとAI runは同一トランザクションで対になって生まれる
+  it('所有者本人の送信はhumanメッセージとそのメッセージをtriggerとするsparring AI runを1回のターン追加で作成する', async () => {
     const chatRepo = new FakeChatRepository({
       findById: ok(makeChat({ memberId: memberId('member-1') })),
     });
-    const aiRunRepo = new FakeAiRunRepository();
+    const turnRepo = new FakeTurnRepository();
 
-    const result = await sendMessage(makeDeps(chatRepo, aiRunRepo), memberId('member-1'), chatId('chat-1'), '相談です');
+    const result = await sendMessage(makeDeps(chatRepo, turnRepo), memberId('member-1'), chatId('chat-1'), '相談です');
 
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.humanMessage.senderType).toBe('human');
       expect(result.value.humanMessage.body).toBe('相談です');
-      expect(aiRunRepo.queuedInputs).toHaveLength(1);
-      expect(aiRunRepo.queuedInputs[0]!.triggerMessageId).toBe(result.value.humanMessage.id);
-      expect(aiRunRepo.queuedInputs[0]!.stage).toBe('sparring');
+      expect(result.value.aiRun.triggerMessageId).toBe(result.value.humanMessage.id);
+      expect(result.value.aiRun.stage).toBe('sparring');
+      expect(turnRepo.calls).toEqual(['appendHumanTurn']);
     }
   });
 });

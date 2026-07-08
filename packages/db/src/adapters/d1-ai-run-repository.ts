@@ -1,5 +1,5 @@
 import type { AiRunId } from '@gs-v2/shared';
-import type { AiRun, AiRunEvent, CreateQueuedRunInput, CompleteRunInput } from '@gs-v2/domain';
+import type { AiRun, AiRunEvent, CompleteRunInput } from '@gs-v2/domain';
 import type { AiRunRepository, AiRunError } from '@gs-v2/domain';
 import type { Result } from '@gs-v2/domain';
 import { ok, err } from '@gs-v2/domain';
@@ -72,47 +72,6 @@ const APPEND_EVENT_MAX_ATTEMPTS = 3;
 
 export class D1AiRunRepository implements AiRunRepository {
   constructor(private readonly db: D1Database) {}
-
-  async createQueued(id: AiRunId, input: CreateQueuedRunInput): Promise<Result<AiRun, AiRunError>> {
-    const now = new Date().toISOString();
-    const eventId = crypto.randomUUID();
-
-    try {
-      await this.db.batch([
-        this.db
-          .prepare(`
-            INSERT INTO ai_runs (id, chat_id, trigger_message_id, stage, status, idempotency_key, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'queued', ?, ?, ?)
-          `)
-          .bind(id, input.chatId, input.triggerMessageId, input.stage, input.idempotencyKey ?? null, now, now),
-        this.db
-          .prepare(`
-            INSERT INTO ai_run_events (id, ai_run_id, event_type, sequence, data_json, created_at)
-            VALUES (?, ?, 'queued', 1, ?, ?)
-          `)
-          .bind(eventId, id, JSON.stringify({ stage: input.stage }), now),
-      ]);
-    } catch (cause) {
-      if (isUniqueConstraintFailure(cause, 'ai_runs.idempotency_key')) {
-        return err({ _tag: 'AiRunConflict', reason: 'IdempotencyKey' });
-      }
-      return err({ _tag: 'AiRunDbFailure', operation: 'createQueued' });
-    }
-
-    return this.findById(id);
-  }
-
-  async findActiveByChatId(chatId: string): Promise<Result<AiRun | null, AiRunError>> {
-    try {
-      const row = await this.db
-        .prepare(`SELECT * FROM ai_runs WHERE chat_id = ? AND status IN ('queued', 'admitted', 'generating', 'repairing') LIMIT 1`)
-        .bind(chatId)
-        .first<AiRunRow>();
-      return ok(row ? rowToAiRun(row) : null);
-    } catch {
-      return err({ _tag: 'AiRunDbFailure', operation: 'findActiveByChatId' });
-    }
-  }
 
   async markAdmitted(id: AiRunId): Promise<Result<void, AiRunError>> {
     return this.casTransition(id, 'queued', 'admitted');

@@ -2,7 +2,7 @@
 CREATE TABLE chats (
   id TEXT PRIMARY KEY,
   member_id TEXT NOT NULL REFERENCES members(id),
-  title TEXT,
+  title TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived')),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
@@ -19,7 +19,9 @@ CREATE TABLE messages (
   body TEXT NOT NULL,
   sequence INTEGER NOT NULL,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  UNIQUE(chat_id, sequence)
+  UNIQUE(chat_id, sequence),
+  -- ai_runs の複合FK (chat_id, trigger_message_id) の参照先。単体FKでは別chatのmessageを刺せる
+  UNIQUE(chat_id, id)
 );
 
 CREATE INDEX idx_messages_chat ON messages(chat_id);

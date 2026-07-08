@@ -2,19 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { startChat } from '../start-chat.js';
 import {
   FakeMemberRepository,
-  FakeChatRepository,
-  FakeAiRunRepository,
+  FakeTurnRepository,
   memberId,
   sequentialIdGen,
   err,
 } from './fixtures.js';
 
-function makeDeps(
-  memberRepo: FakeMemberRepository,
-  chatRepo = new FakeChatRepository(),
-  aiRunRepo = new FakeAiRunRepository(),
-) {
-  return { memberRepo, chatRepo, aiRunRepo, idGen: sequentialIdGen() };
+function makeDeps(memberRepo: FakeMemberRepository, turnRepo = new FakeTurnRepository()) {
+  return { memberRepo, turnRepo, idGen: sequentialIdGen() };
 }
 
 describe('startChat', () => {
@@ -23,40 +18,37 @@ describe('startChat', () => {
     const memberRepo = new FakeMemberRepository({
       findById: err({ _tag: 'MemberNotFound', memberId: 'ghost' }),
     });
-    const chatRepo = new FakeChatRepository();
-    const aiRunRepo = new FakeAiRunRepository();
+    const turnRepo = new FakeTurnRepository();
 
-    const result = await startChat(makeDeps(memberRepo, chatRepo, aiRunRepo), memberId('ghost'), 'はじめまして');
+    const result = await startChat(makeDeps(memberRepo, turnRepo), memberId('ghost'), 'はじめまして');
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error._tag).toBe('MemberNotFound');
-    expect(chatRepo.calls).toHaveLength(0);
-    expect(aiRunRepo.calls).toHaveLength(0);
+    expect(turnRepo.calls).toHaveLength(0);
   });
 
-  it('メンバー本人の壁打ち開始はチャット作成→humanメッセージ追加→AI run作成を一連で行う', async () => {
+  // ADV-007: chat・最初のmessage・queued runは1回の原子的な作成で生まれる
+  it('メンバー本人の壁打ち開始はチャット・humanメッセージ・AI runを原子的に一括作成する', async () => {
     const memberRepo = new FakeMemberRepository();
-    const chatRepo = new FakeChatRepository();
-    const aiRunRepo = new FakeAiRunRepository();
+    const turnRepo = new FakeTurnRepository();
 
-    const result = await startChat(makeDeps(memberRepo, chatRepo, aiRunRepo), memberId('member-1'), '最初の相談');
+    const result = await startChat(makeDeps(memberRepo, turnRepo), memberId('member-1'), '最初の相談');
 
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.chat.memberId).toBe('member-1');
       expect(result.value.humanMessage.body).toBe('最初の相談');
       expect(result.value.aiRun.triggerMessageId).toBe(result.value.humanMessage.id);
-      expect(chatRepo.calls).toEqual(['create', 'appendMessage']);
-      expect(aiRunRepo.calls).toEqual(['createQueued']);
+      expect(turnRepo.calls).toEqual(['createChatWithFirstTurn']);
     }
   });
 
   it('チャットのタイトルは最初の相談文の先頭50文字になる', async () => {
     const memberRepo = new FakeMemberRepository();
-    const chatRepo = new FakeChatRepository();
+    const turnRepo = new FakeTurnRepository();
     const longMessage = 'あ'.repeat(60);
 
-    const result = await startChat(makeDeps(memberRepo, chatRepo), memberId('member-1'), longMessage);
+    const result = await startChat(makeDeps(memberRepo, turnRepo), memberId('member-1'), longMessage);
 
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -64,18 +56,15 @@ describe('startChat', () => {
     }
   });
 
-  it('チャット作成がDB失敗したらChatDbFailureを返し、メッセージ追加へ進まない', async () => {
+  it('一括作成がDB失敗したらTurnDbFailureを返す', async () => {
     const memberRepo = new FakeMemberRepository();
-    const chatRepo = new FakeChatRepository({
-      create: err({ _tag: 'ChatDbFailure', operation: 'create' }),
+    const turnRepo = new FakeTurnRepository({
+      createChatWithFirstTurn: err({ _tag: 'TurnDbFailure', operation: 'createChatWithFirstTurn' }),
     });
-    const aiRunRepo = new FakeAiRunRepository();
 
-    const result = await startChat(makeDeps(memberRepo, chatRepo, aiRunRepo), memberId('member-1'), '最初の相談');
+    const result = await startChat(makeDeps(memberRepo, turnRepo), memberId('member-1'), '最初の相談');
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error._tag).toBe('ChatDbFailure');
-    expect(chatRepo.calls).not.toContain('appendMessage');
-    expect(aiRunRepo.calls).toHaveLength(0);
+    if (!result.ok) expect(result.error._tag).toBe('TurnDbFailure');
   });
 });

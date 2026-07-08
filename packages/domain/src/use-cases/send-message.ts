@@ -1,10 +1,11 @@
 import type { ChatId, MemberId, MessageId, AiRunId } from '@gs-v2/shared';
 import type { Result } from '../result.js';
-import { ok } from '../result.js';
 import type { Message } from '../models/chat.js';
 import type { AiRun } from '../models/ai-run.js';
 import type { ChatRepository, ChatError } from '../ports/chat-repository.js';
-import type { AiRunRepository, AiRunError } from '../ports/ai-run-repository.js';
+import type { TurnRepository, TurnError } from '../ports/turn-repository.js';
+
+export type { AiRunInFlight } from '../ports/turn-repository.js';
 
 export type ChatNotOwned = {
   readonly _tag: 'ChatNotOwned';
@@ -12,17 +13,10 @@ export type ChatNotOwned = {
   readonly actorMemberId: string;
 };
 
-export type AiRunInFlight = {
-  readonly _tag: 'AiRunInFlight';
-  readonly chatId: string;
-  readonly aiRunId: string;
-};
-
 export type SendMessageError =
   | ChatError
-  | AiRunError
-  | ChatNotOwned
-  | AiRunInFlight;
+  | TurnError
+  | ChatNotOwned;
 
 export interface SendMessageOutput {
   readonly humanMessage: Message;
@@ -31,7 +25,7 @@ export interface SendMessageOutput {
 
 export interface SendMessageDeps {
   readonly chatRepo: ChatRepository;
-  readonly aiRunRepo: AiRunRepository;
+  readonly turnRepo: TurnRepository;
   readonly idGen: () => string;
 }
 
@@ -52,31 +46,19 @@ export async function sendMessage(
     return { ok: false, error: { _tag: 'ChatArchived', chatId } };
   }
 
-  // 1チャット1 in-flight run: AI応答待ち中の追加送信は拒否する（TSU-004裁定A）
-  const activeRunResult = await deps.aiRunRepo.findActiveByChatId(chatId);
-  if (!activeRunResult.ok) return activeRunResult;
-  if (activeRunResult.value !== null) {
-    return { ok: false, error: { _tag: 'AiRunInFlight', chatId, aiRunId: activeRunResult.value.id } };
-  }
+  // message+run同時作成は原子的。「1チャット1 in-flight run」はDBの部分UNIQUE indexが保証し、
+  // 違反はAiRunInFlightとして返る（TSU-004裁定A / ADV-007）
+  const turnResult = await deps.turnRepo.appendHumanTurn(
+    { messageId: deps.idGen() as MessageId, aiRunId: deps.idGen() as AiRunId },
+    { chatId, body: messageBody, stage: 'sparring' },
+  );
+  if (!turnResult.ok) return turnResult;
 
-  const messageId = deps.idGen() as MessageId;
-  const messageResult = await deps.chatRepo.appendMessage(messageId, {
-    chatId,
-    senderType: 'human',
-    body: messageBody,
-  });
-  if (!messageResult.ok) return messageResult;
-
-  const aiRunId = deps.idGen() as AiRunId;
-  const aiRunResult = await deps.aiRunRepo.createQueued(aiRunId, {
-    chatId,
-    triggerMessageId: messageId,
-    stage: 'sparring',
-  });
-  if (!aiRunResult.ok) return aiRunResult;
-
-  return ok({
-    humanMessage: messageResult.value,
-    aiRun: aiRunResult.value,
-  });
+  return {
+    ok: true,
+    value: {
+      humanMessage: turnResult.value.humanMessage,
+      aiRun: turnResult.value.aiRun,
+    },
+  };
 }

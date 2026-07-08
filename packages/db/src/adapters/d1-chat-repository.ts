@@ -1,5 +1,5 @@
 import type { ChatId, MemberId, MessageId } from '@gs-v2/shared';
-import type { Chat, Message, CreateChatInput, AppendMessageInput } from '@gs-v2/domain';
+import type { Chat, Message, AppendMessageInput } from '@gs-v2/domain';
 import type { ChatRepository, ChatError } from '@gs-v2/domain';
 import type { Result } from '@gs-v2/domain';
 import { ok, err } from '@gs-v2/domain';
@@ -7,7 +7,7 @@ import { ok, err } from '@gs-v2/domain';
 interface ChatRow {
   id: string;
   member_id: string;
-  title: string | null;
+  title: string;
   status: string;
   created_at: string;
   updated_at: string;
@@ -56,19 +56,6 @@ const APPEND_MESSAGE_MAX_ATTEMPTS = 3;
 
 export class D1ChatRepository implements ChatRepository {
   constructor(private readonly db: D1Database) {}
-
-  async create(id: ChatId, input: CreateChatInput): Promise<Result<Chat, ChatError>> {
-    const now = new Date().toISOString();
-    try {
-      await this.db
-        .prepare('INSERT INTO chats (id, member_id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(id, input.memberId, input.title ?? null, 'active', now, now)
-        .run();
-    } catch {
-      return err({ _tag: 'ChatDbFailure', operation: 'create' });
-    }
-    return this.findById(id);
-  }
 
   async findById(id: ChatId): Promise<Result<Chat, ChatError>> {
     try {

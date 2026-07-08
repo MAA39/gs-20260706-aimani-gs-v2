@@ -1,10 +1,19 @@
 import type { ChatId, MemberId, MessageId, AiRunId } from '@gs-v2/shared';
 import type { Member } from '../../models/member.js';
-import type { Chat, Message, AppendMessageInput, CreateChatInput } from '../../models/chat.js';
-import type { AiRun, AiRunEvent, CreateQueuedRunInput, CompleteRunInput } from '../../models/ai-run.js';
+import type { Chat, Message, AppendMessageInput } from '../../models/chat.js';
+import type { AiRun, AiRunEvent, CompleteRunInput } from '../../models/ai-run.js';
 import type { MemberRepository, MemberError } from '../../ports/member-repository.js';
 import type { ChatRepository, ChatError } from '../../ports/chat-repository.js';
 import type { AiRunRepository, AiRunError } from '../../ports/ai-run-repository.js';
+import type {
+  TurnRepository,
+  TurnError,
+  TurnIds,
+  HumanTurn,
+  ChatWithFirstTurn,
+  AppendHumanTurnInput,
+  CreateChatWithFirstTurnInput,
+} from '../../ports/turn-repository.js';
 import type { Result } from '../../result.js';
 import { ok, err } from '../../result.js';
 
@@ -37,7 +46,7 @@ export function makeChat(overrides: Partial<Chat> = {}): Chat {
   return {
     id: chatId('chat-1'),
     memberId: memberId('member-1'),
-    title: null,
+    title: 'テスト相談',
     status: 'active',
     createdAt: NOW,
     updatedAt: NOW,
@@ -109,7 +118,6 @@ export class FakeMemberRepository implements MemberRepository {
 
 export interface FakeChatRepoConfig {
   findById?: Result<Chat, ChatError>;
-  create?: Result<Chat, ChatError>;
   appendMessage?: Result<Message, ChatError>;
   listMessages?: Result<readonly Message[], ChatError>;
 }
@@ -119,11 +127,6 @@ export class FakeChatRepository implements ChatRepository {
   readonly appendedMessages: AppendMessageInput[] = [];
 
   constructor(private readonly config: FakeChatRepoConfig = {}) {}
-
-  async create(id: ChatId, input: CreateChatInput): Promise<Result<Chat, ChatError>> {
-    this.calls.push('create');
-    return this.config.create ?? ok(makeChat({ id, memberId: input.memberId, title: input.title ?? null }));
-  }
 
   async findById(id: ChatId): Promise<Result<Chat, ChatError>> {
     this.calls.push('findById');
@@ -150,30 +153,8 @@ export class FakeChatRepository implements ChatRepository {
   }
 }
 
-export interface FakeAiRunRepoConfig {
-  createQueued?: Result<AiRun, AiRunError>;
-  findActiveByChatId?: Result<AiRun | null, AiRunError>;
-}
-
 export class FakeAiRunRepository implements AiRunRepository {
   readonly calls: string[] = [];
-  readonly queuedInputs: CreateQueuedRunInput[] = [];
-
-  constructor(private readonly config: FakeAiRunRepoConfig = {}) {}
-
-  async createQueued(id: AiRunId, input: CreateQueuedRunInput): Promise<Result<AiRun, AiRunError>> {
-    this.calls.push('createQueued');
-    this.queuedInputs.push(input);
-    return (
-      this.config.createQueued ??
-      ok(makeAiRun({ id, chatId: input.chatId as ChatId, triggerMessageId: input.triggerMessageId as MessageId }))
-    );
-  }
-
-  async findActiveByChatId(): Promise<Result<AiRun | null, AiRunError>> {
-    this.calls.push('findActiveByChatId');
-    return this.config.findActiveByChatId ?? ok(null);
-  }
 
   async markAdmitted(): Promise<Result<void, AiRunError>> {
     this.calls.push('markAdmitted');
@@ -208,6 +189,48 @@ export class FakeAiRunRepository implements AiRunRepository {
   async listEventsAfter(): Promise<Result<readonly AiRunEvent[], AiRunError>> {
     this.calls.push('listEventsAfter');
     return ok([]);
+  }
+}
+
+export interface FakeTurnRepoConfig {
+  createChatWithFirstTurn?: Result<ChatWithFirstTurn, TurnError>;
+  appendHumanTurn?: Result<HumanTurn, TurnError>;
+}
+
+export class FakeTurnRepository implements TurnRepository {
+  readonly calls: string[] = [];
+  readonly createdChats: CreateChatWithFirstTurnInput[] = [];
+  readonly appendedTurns: AppendHumanTurnInput[] = [];
+
+  constructor(private readonly config: FakeTurnRepoConfig = {}) {}
+
+  async createChatWithFirstTurn(
+    chatId: ChatId,
+    ids: TurnIds,
+    input: CreateChatWithFirstTurnInput,
+  ): Promise<Result<ChatWithFirstTurn, TurnError>> {
+    this.calls.push('createChatWithFirstTurn');
+    this.createdChats.push(input);
+    return (
+      this.config.createChatWithFirstTurn ??
+      ok({
+        chat: makeChat({ id: chatId, memberId: input.memberId, title: input.title }),
+        humanMessage: makeMessage({ id: ids.messageId, chatId, body: input.body }),
+        aiRun: makeAiRun({ id: ids.aiRunId, chatId, triggerMessageId: ids.messageId, stage: input.stage }),
+      })
+    );
+  }
+
+  async appendHumanTurn(ids: TurnIds, input: AppendHumanTurnInput): Promise<Result<HumanTurn, TurnError>> {
+    this.calls.push('appendHumanTurn');
+    this.appendedTurns.push(input);
+    return (
+      this.config.appendHumanTurn ??
+      ok({
+        humanMessage: makeMessage({ id: ids.messageId, chatId: input.chatId, body: input.body }),
+        aiRun: makeAiRun({ id: ids.aiRunId, chatId: input.chatId, triggerMessageId: ids.messageId, stage: input.stage }),
+      })
+    );
   }
 }
 
