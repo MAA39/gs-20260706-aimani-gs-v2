@@ -70,6 +70,8 @@ function ChatPage() {
   const [input, setInput] = useState('');
   const [waitingForAi, setWaitingForAi] = useState(false);
   const [activeAiRunId, setActiveAiRunId] = useState<string | null>(null);
+  // 送信直後〜サーバー反映までの体感の空白を埋める仮バブル
+  const [pendingHumanMessage, setPendingHumanMessage] = useState<string | null>(null);
   const [uiError, setUiError] = useState<UiError | null>(null);
   const queryClient = useQueryClient();
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -130,6 +132,14 @@ function ChatPage() {
     }
   }, [messages, waitingForAi, lastHumanSeq]);
 
+  // サーバー側に反映されたら仮バブルを取り下げる
+  useEffect(() => {
+    if (!pendingHumanMessage) return;
+    if (messages.some((m) => m.senderType === 'human' && m.body === pendingHumanMessage)) {
+      setPendingHumanMessage(null);
+    }
+  }, [messages, pendingHumanMessage]);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
@@ -146,6 +156,7 @@ function ChatPage() {
   const handleSendFailure = (error: ApiClientError, failedMessage: string) => {
     const described = describeApiError(error);
     setUiError(described);
+    setPendingHumanMessage(null);
     if (described.kind === 'auth') {
       navigate({ to: '/' });
       return;
@@ -190,6 +201,7 @@ function ChatPage() {
     if (!trimmed) return;
     setInput('');
     setUiError(null);
+    setPendingHumanMessage(trimmed);
 
     if (chatId) {
       sendMutation.mutate(trimmed);
@@ -236,10 +248,12 @@ function ChatPage() {
             onClick={() => {
               setChatId(null);
               setWaitingForAi(false);
+              setActiveAiRunId(null);
+              setPendingHumanMessage(null);
               setUiError(null);
             }}
           >
-            新しい壁打ち
+            一覧へ戻る
           </button>
         )}
       </header>
@@ -297,6 +311,13 @@ function ChatPage() {
           <MessageBubble key={msg.id} message={msg} />
         ))}
 
+        {pendingHumanMessage && (
+          <div style={{ ...styles.bubble, ...styles.humanBubble }}>
+            <div style={styles.senderLabel}>あなた</div>
+            <div style={styles.messageBody}>{pendingHumanMessage}</div>
+          </div>
+        )}
+
         {waitingForAi && (
           <div style={{ ...styles.bubble, ...styles.aiBubble }}>
             <span style={styles.typing}>{describeAiRunStatus(aiRunStatus)}</span>
@@ -312,7 +333,22 @@ function ChatPage() {
           </div>
         )}
 
-        {uiError && <div style={styles.errorBanner}>{uiError.text}</div>}
+        {uiError && (
+          <div style={styles.errorBanner}>
+            {uiError.text}
+            {(uiError.kind === 'timeout' || uiError.kind === 'generic') && (
+              <button
+                style={styles.retryButton}
+                onClick={() => {
+                  setUiError(null);
+                  messagesQuery.refetch();
+                }}
+              >
+                更新
+              </button>
+            )}
+          </div>
+        )}
 
         <div ref={bottomRef} />
       </main>
@@ -375,7 +411,8 @@ const styles: Record<string, React.CSSProperties> = {
   container: {
     display: 'flex',
     flexDirection: 'column',
-    height: '100vh',
+    height: '100dvh',
+    width: '100%',
     maxWidth: 720,
     margin: '0 auto',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
@@ -402,6 +439,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   messages: {
     flex: 1,
+    minHeight: 0,
     overflowY: 'auto',
     padding: '16px',
     display: 'flex',
@@ -549,10 +587,12 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     gap: 8,
     padding: '12px 16px',
+    paddingBottom: 'calc(12px + env(safe-area-inset-bottom))',
     borderTop: '1px solid #e0e0e0',
   },
   input: {
     flex: 1,
+    minWidth: 0,
     padding: '10px 14px',
     fontSize: 14,
     border: '1px solid #ccc',

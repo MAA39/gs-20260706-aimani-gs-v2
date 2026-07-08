@@ -1,21 +1,33 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { signInWithGitHub } from '../lib/auth-client';
+import { authClient, signInWithGitHub } from '../lib/auth-client';
 
 export const Route = createFileRoute('/')({
   component: HomePage,
 });
 
 function HomePage() {
+  const { data: session, isPending } = authClient.useSession();
+  const isLoggedIn = !!session?.user;
+  const chatUrl = typeof window !== 'undefined' ? `${window.location.origin}/chat` : '/chat';
+
   return (
     <main style={styles.container}>
       <h1 style={styles.title}>aimani G's V2</h1>
       <p style={styles.subtitle}>AI壁打ちで、人につなげる</p>
-      <Link to="/chat" style={styles.startButton}>
-        壁打ちを始める
-      </Link>
-      <button style={styles.loginButton} onClick={() => signInWithGitHub()}>
-        GitHubでログイン
-      </button>
+      {isLoggedIn ? (
+        <Link to="/chat" style={styles.startButton}>
+          壁打ちを始める
+        </Link>
+      ) : (
+        // 未ログインで/chatへ送ると弾き返されて信頼を落とすので、ログイン→そのままチャットへ一本化
+        <button
+          style={{ ...styles.startButton, ...styles.startButtonAsButton }}
+          disabled={isPending}
+          onClick={() => signInWithGitHub(chatUrl)}
+        >
+          {isPending ? '確認中...' : 'GitHubでログインして始める'}
+        </button>
+      )}
     </main>
   );
 }
@@ -26,18 +38,21 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    height: '100vh',
+    height: '100dvh',
+    padding: '0 16px',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
   },
   title: {
     fontSize: 32,
     fontWeight: 700,
     margin: '0 0 8px',
+    textAlign: 'center' as const,
   },
   subtitle: {
     fontSize: 16,
     color: '#666',
     margin: '0 0 32px',
+    textAlign: 'center' as const,
   },
   startButton: {
     display: 'inline-block',
@@ -49,15 +64,8 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 8,
     textDecoration: 'none',
   },
-  loginButton: {
-    marginTop: 16,
-    padding: '10px 24px',
-    fontSize: 14,
-    fontWeight: 600,
-    color: '#333',
-    background: 'white',
-    border: '1px solid #ccc',
-    borderRadius: 8,
+  startButtonAsButton: {
+    border: 'none',
     cursor: 'pointer',
   },
 };
