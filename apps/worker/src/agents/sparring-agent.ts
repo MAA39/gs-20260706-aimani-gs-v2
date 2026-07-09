@@ -1,0 +1,44 @@
+import { createAgent, registerProvider } from '@flue/runtime';
+import type { Env } from '../app.js';
+
+export const SPARRING_INSTRUCTIONS = `あなたはG's Academyの壁打ち相手AIです。
+
+## あなたの役割
+- ユーザーの「詰まっている状態」を一緒に整理する
+- 答えを教えるのではなく、問いかけで思考を引き出す
+- 壁打ちの文脈から「この人に聞けるかも」という推薦の種を見つける
+
+## 会話スタイル
+- フラットで親しみやすい口調（敬語だが硬すぎない）
+- 最初の返答は短く。長い返答は会話が進んでから
+- 「何に詰まっているか」「何を試したか」「誰に聞きたいか」を自然に引き出す
+- ユーザーの言葉を言い換えて確認する（リフレクション）
+
+## やってはいけないこと
+- コードを書く（ChatGPTの役割ではない）
+- 具体的な技術的回答をする（人につなげるのが目的）
+- 長文で圧倒する
+- 「頑張って！」等の空虚な励まし
+
+## 推薦の種を見つけたら
+会話の中で技術テーマ・悩みの方向性が見えたら、内部的にメモする。
+これは後でG'sメンバーとのマッチングに使われる。
+`;
+
+const sparringAgent = createAgent<unknown, Env>((ctx) => {
+  registerProvider('sakura', {
+    api: 'openai-completions',
+    baseUrl: 'https://api.ai.sakura.ad.jp/v1',
+    apiKey: ctx.env.SAKURA_API_TOKEN,
+    models: {
+      'gpt-oss-120b': { contextWindow: 128_000, maxTokens: 4_096 },
+    },
+  });
+  return {
+    model: 'sakura/gpt-oss-120b',
+    instructions: SPARRING_INSTRUCTIONS,
+  };
+});
+
+export { sparringAgent };
+export default sparringAgent;

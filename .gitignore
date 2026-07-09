@@ -1,8 +1,14 @@
 node_modules/
 dist/
 .wrangler/
+.flue-vite/
+.flue-vite.wrangler.jsonc
+.tanstack/
 .dev.vars
 *.log
 .DS_Store
+.claude/
 .codex/
 .codex-reports/
+.turbo/
+doc_index.json

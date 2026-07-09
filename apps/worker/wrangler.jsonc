@@ -1,0 +1,38 @@
+{
+  "$schema": "https://workers.cloudflare.com/schema/wrangler.json",
+  "name": "aimani-gs-v2",
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "src/index.ts",
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "aimani-gs-v2-db",
+      "database_id": "28d215ff-053d-4ffd-b312-300bd9eafb8f",
+      "migrations_dir": "../../packages/db/migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "FLUE_SPARRING_AGENT", "class_name": "FlueSparringAgentAgent" },
+      { "name": "FLUE_SPARRING_WORKFLOW", "class_name": "FlueSparringWorkflowWorkflow" },
+      { "name": "FLUE_REGISTRY", "class_name": "FlueRegistry" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["FlueRegistry", "FlueSparringAgentAgent", "FlueSparringWorkflowWorkflow"] }
+  ],
+  "rate_limits": [
+    {
+      "binding": "CHAT_RATE_LIMITER",
+      "namespace_id": "1",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
+    }
+  ]
+}

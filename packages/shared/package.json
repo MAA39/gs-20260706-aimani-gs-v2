@@ -1,0 +1,17 @@
+{
+  "name": "@gs-v2/shared",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0",
+    "vitest": "^4.1.10"
+  }
+}

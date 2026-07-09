@@ -1,0 +1,29 @@
+{
+  "name": "@gs-v2/worker",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "flue dev --target cloudflare --port 8787",
+    "build": "flue build --target cloudflare",
+    "deploy": "flue build --target cloudflare && wrangler deploy --config dist/aimani_gs_v2/wrangler.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@flue/runtime": "1.0.0-beta.2",
+    "@gs-v2/contracts": "workspace:*",
+    "@gs-v2/db": "workspace:*",
+    "@gs-v2/domain": "workspace:*",
+    "@gs-v2/shared": "workspace:*",
+    "agents": "^0.16.2",
+    "better-auth": "^1.6.23",
+    "hono": "^4.7.0",
+    "kysely": "^0.29.3",
+    "kysely-d1": "^0.4.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260601.0",
+    "@flue/cli": "1.0.0-beta.1",
+    "typescript": "^5.8.0",
+    "wrangler": "^4.0.0"
+  }
+}

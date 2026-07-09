@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aimani-gs-v2-web",
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "@tanstack/react-start/server-entry",
+  "services": [
+    {
+      "binding": "API",
+      "service": "aimani-gs-v2"
+    }
+  ]
+}
